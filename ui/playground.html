@@ -127,6 +127,16 @@
     KeyZ: 'z',
     KeyX: 'x',
   };
+  const allWeaponIconPaths = [
+    'ui/playground-icon-linear-beam.png',
+    'ui/playground-icon-arc-homing-beam.png',
+    'ui/playground-icon-sustained-laser.svg',
+    'ui/playground-icon-massive-laser.svg',
+    'ui/playground-icon-fire-bomb.png',
+    'ui/playground-icon-leaf-block.png',
+    'ui/playground-icon-pickaxe.png',
+    'ui/playground-icon-sword.png',
+  ];
   let damageVignetteAnimation;
   let strongDamageVignetteAnimation;
   let currentEquipmentIconIds = null;
@@ -187,6 +197,21 @@
     const normalizedPath = iconPath.replace(/^\/+/, '');
     return `{{CDN_ASSETS_URL}}/${normalizedPath}`;
   };
+
+  const preloadEquipmentIcons = () => {
+    for (const iconPath of allWeaponIconPaths) {
+      const iconUri = resolveEquipmentIconUri(iconPath);
+      if (!iconUri) {
+        continue;
+      }
+
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = iconUri;
+    }
+  };
+
+  preloadEquipmentIcons();
 
   actionButtons.forEach((button) => {
     const code = button.dataset.actionCode;
