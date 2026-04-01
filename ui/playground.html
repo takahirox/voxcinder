@@ -21,6 +21,9 @@
           id="playground-ui-left-slot-flash"
           class="playground-ui-slot-flash"
         ></div>
+        <div class="playground-ui-slot-loading" aria-hidden="true">
+          <div class="playground-ui-slot-loading-spinner"></div>
+        </div>
         <img
           id="playground-ui-left-icon"
           class="playground-ui-slot-icon"
@@ -35,6 +38,9 @@
           id="playground-ui-right-slot-flash"
           class="playground-ui-slot-flash"
         ></div>
+        <div class="playground-ui-slot-loading" aria-hidden="true">
+          <div class="playground-ui-slot-loading-spinner"></div>
+        </div>
         <img
           id="playground-ui-right-icon"
           class="playground-ui-slot-icon"
@@ -119,6 +125,11 @@
   const actionButtons = Array.from(document.querySelectorAll('[data-action-code]'));
   const actionButtonByCode = new Map();
   const actionPointerButtonById = new Map();
+  const iconPreloadEntries = new Map();
+  const pendingEquipmentIconUris = {
+    left: leftIcon?.src,
+    right: rightIcon?.src,
+  };
   const actionKeyByCode = {
     Space: ' ',
     ShiftLeft: 'Shift',
@@ -205,10 +216,71 @@
         continue;
       }
 
-      const image = new Image();
-      image.decoding = 'async';
-      image.src = iconUri;
+      ensureEquipmentIconPreloaded(iconUri);
     }
+  };
+
+  const ensureEquipmentIconPreloaded = (iconUri) => {
+    if (!iconUri) {
+      return Promise.resolve(false);
+    }
+
+    const existingEntry = iconPreloadEntries.get(iconUri);
+    if (existingEntry) {
+      return existingEntry.promise;
+    }
+
+    const image = new Image();
+    image.decoding = 'async';
+
+    const promise = new Promise((resolve) => {
+      image.onload = () => {
+        iconPreloadEntries.set(iconUri, { promise, status: 'loaded' });
+        resolve(true);
+      };
+      image.onerror = () => {
+        iconPreloadEntries.set(iconUri, { promise, status: 'error' });
+        resolve(false);
+      };
+    });
+
+    iconPreloadEntries.set(iconUri, { promise, status: 'loading' });
+    image.src = iconUri;
+
+    return promise;
+  };
+
+  const setEquipmentSlotLoading = (slotElement, loading) => {
+    slotElement?.classList.toggle('playground-ui-slot-frame-loading', loading);
+  };
+
+  const applyEquipmentIcon = (slot, slotElement, iconElement, iconUri) => {
+    if (!slotElement || !iconElement || !iconUri) {
+      return;
+    }
+
+    pendingEquipmentIconUris[slot] = iconUri;
+
+    const existingEntry = iconPreloadEntries.get(iconUri);
+    if (existingEntry?.status === 'loaded') {
+      iconElement.src = iconUri;
+      setEquipmentSlotLoading(slotElement, false);
+      return;
+    }
+
+    setEquipmentSlotLoading(slotElement, true);
+
+    void ensureEquipmentIconPreloaded(iconUri).then((loaded) => {
+      if (pendingEquipmentIconUris[slot] !== iconUri) {
+        return;
+      }
+
+      if (loaded) {
+        iconElement.src = iconUri;
+      }
+
+      setEquipmentSlotLoading(slotElement, false);
+    });
   };
 
   preloadEquipmentIcons();
@@ -543,14 +615,10 @@
     };
 
     const leftIconUri = resolveEquipmentIconUri(data.leftIconPath);
-    if (leftIcon && leftIconUri) {
-      leftIcon.src = leftIconUri;
-    }
+    applyEquipmentIcon('left', leftSlot, leftIcon, leftIconUri);
 
     const rightIconUri = resolveEquipmentIconUri(data.rightIconPath);
-    if (rightIcon && rightIconUri) {
-      rightIcon.src = rightIconUri;
-    }
+    applyEquipmentIcon('right', rightSlot, rightIcon, rightIconUri);
 
     currentControlsDisabled = !!data.controlsDisabled;
     currentEquipmentDisabled = !!data.equipmentDisabled;
@@ -874,15 +942,25 @@
     height: 100%;
     object-fit: cover;
     object-position: center;
+    opacity: 1;
     position: relative;
     transform: scale(1.08);
+    transition: opacity 120ms ease-out;
     transform-origin: center;
     will-change: transform;
     width: 100%;
   }
 
+  .playground-ui-slot-frame-loading .playground-ui-slot-icon {
+    opacity: 0;
+  }
+
   .playground-ui-slot-frame-disabled .playground-ui-slot-icon {
     opacity: 0.56;
+  }
+
+  .playground-ui-slot-frame-loading.playground-ui-slot-frame-disabled .playground-ui-slot-icon {
+    opacity: 0;
   }
 
   .playground-ui-slot-flash {
@@ -895,6 +973,42 @@
     position: absolute;
     will-change: opacity;
     z-index: 1;
+  }
+
+  .playground-ui-slot-loading {
+    align-items: center;
+    display: flex;
+    inset: 0;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transition: opacity 120ms ease-out;
+    z-index: 1;
+  }
+
+  .playground-ui-slot-frame-loading .playground-ui-slot-loading {
+    opacity: 1;
+  }
+
+  .playground-ui-slot-loading-spinner {
+    animation: playground-ui-slot-loading-spin 900ms linear infinite;
+    border: 2px solid rgba(229, 218, 188, 0.18);
+    border-top-color: rgba(243, 232, 205, 0.9);
+    border-radius: 999px;
+    box-shadow: 0 0 12px rgba(226, 211, 172, 0.12);
+    height: 22px;
+    width: 22px;
+  }
+
+  @keyframes playground-ui-slot-loading-spin {
+    from {
+      transform: rotate(0deg);
+    }
+
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .playground-scene-damage-number {
