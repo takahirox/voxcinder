@@ -1,0 +1,104 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="848"
+  height="1264"
+  viewBox="0 0 848 1264"
+  fill="none"
+>
+  <defs>
+    <filter id="playground-massive-laser-warm-shift" x="-20%" y="-20%" width="140%" height="140%">
+      <feColorMatrix
+        type="matrix"
+        values="
+          0.12 0.92 0.24 0 0
+          0.06 0.82 0.18 0 0
+          0.02 0.16 0.22 0 0
+          0    0    0    1 0
+        "
+      />
+    </filter>
+    <filter id="playground-massive-laser-outer-glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="28" />
+    </filter>
+    <filter id="playground-massive-laser-mid-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" />
+    </filter>
+    <radialGradient id="playground-massive-laser-source-burst" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(150 1110) rotate(90) scale(470 470)">
+      <stop offset="0" stop-color="#FFF9EA" />
+      <stop offset="0.16" stop-color="#FFE2A6" stop-opacity="0.98" />
+      <stop offset="0.42" stop-color="#FFAF66" stop-opacity="0.62" />
+      <stop offset="0.78" stop-color="#2A0E10" stop-opacity="0.08" />
+      <stop offset="1" stop-color="#120607" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="playground-massive-laser-tip-burst" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(688 144) rotate(90) scale(196 196)">
+      <stop offset="0" stop-color="#FFFBEF" />
+      <stop offset="0.24" stop-color="#FFE4A8" stop-opacity="0.98" />
+      <stop offset="0.68" stop-color="#FF9C62" stop-opacity="0.2" />
+      <stop offset="1" stop-color="#FF8F55" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="playground-massive-laser-outer-stroke" x1="150" y1="1110" x2="688" y2="144" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF7E49" stop-opacity="0.86" />
+      <stop offset="0.4" stop-color="#FFB867" stop-opacity="0.98" />
+      <stop offset="1" stop-color="#FFE8A8" stop-opacity="0.92" />
+    </linearGradient>
+    <linearGradient id="playground-massive-laser-inner-stroke" x1="150" y1="1110" x2="688" y2="144" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF0D2" />
+      <stop offset="0.42" stop-color="#FFFDF9" />
+      <stop offset="1" stop-color="#FFE5A5" />
+    </linearGradient>
+  </defs>
+
+  <rect width="848" height="1264" fill="#020202" />
+  <image
+    href="playground-icon-linear-beam.png"
+    x="0"
+    y="0"
+    width="848"
+    height="1264"
+    opacity="0.46"
+    filter="url(#playground-massive-laser-warm-shift)"
+    preserveAspectRatio="none"
+  />
+
+  <rect width="848" height="1264" fill="#090304" opacity="0.18" />
+  <circle cx="150" cy="1110" r="470" fill="url(#playground-massive-laser-source-burst)" />
+  <circle cx="688" cy="144" r="196" fill="url(#playground-massive-laser-tip-burst)" />
+
+  <path
+    d="M150 1110L688 144"
+    stroke="url(#playground-massive-laser-outer-stroke)"
+    stroke-width="500"
+    stroke-linecap="round"
+    filter="url(#playground-massive-laser-outer-glow)"
+    opacity="0.82"
+  />
+  <path
+    d="M150 1110L688 144"
+    stroke="url(#playground-massive-laser-outer-stroke)"
+    stroke-width="320"
+    stroke-linecap="round"
+    filter="url(#playground-massive-laser-mid-glow)"
+    opacity="0.98"
+  />
+  <path
+    d="M150 1110L688 144"
+    stroke="url(#playground-massive-laser-inner-stroke)"
+    stroke-width="188"
+    stroke-linecap="round"
+    opacity="0.99"
+  />
+  <path
+    d="M150 1110L688 144"
+    stroke="#FFFDF9"
+    stroke-width="82"
+    stroke-linecap="round"
+    opacity="0.98"
+  />
+
+  <g opacity="0.72">
+    <path d="M96 1064L204 1160" stroke="#FFD493" stroke-width="11" stroke-linecap="round" />
+    <path d="M100 1140L210 1056" stroke="#FFBF79" stroke-width="8" stroke-linecap="round" />
+    <path d="M632 104L724 186" stroke="#FFE4AB" stroke-width="8" stroke-linecap="round" />
+    <path d="M642 192L718 108" stroke="#FFE4AB" stroke-width="8" stroke-linecap="round" />
+  </g>
+</svg>

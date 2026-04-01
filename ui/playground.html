@@ -1,0 +1,938 @@
+<div id="playground-ui-root">
+  <img
+    id="playground-ui-damage-vignette"
+    src="{{CDN_ASSETS_URL}}/ui/playground-damage-vignette.svg"
+    alt=""
+  />
+  <img
+    id="playground-ui-damage-vignette-strong"
+    src="{{CDN_ASSETS_URL}}/ui/playground-damage-vignette-strong.svg"
+    alt=""
+  />
+  <div id="playground-ui-top-stats" aria-hidden="true">
+    <span id="playground-ui-top-kills" class="playground-ui-top-stat playground-ui-top-stat-kills">0</span>
+    <span id="playground-ui-top-damage" class="playground-ui-top-stat playground-ui-top-stat-damage">-0</span>
+    <span id="playground-ui-top-elapsed" class="playground-ui-top-elapsed">00:00:00</span>
+  </div>
+  <div id="playground-ui-hud">
+    <div class="playground-ui-hand-slot playground-ui-hand-slot-left">
+      <div id="playground-ui-left-slot" class="playground-ui-slot-frame">
+        <div
+          id="playground-ui-left-slot-flash"
+          class="playground-ui-slot-flash"
+        ></div>
+        <img
+          id="playground-ui-left-icon"
+          class="playground-ui-slot-icon"
+          src="{{CDN_ASSETS_URL}}/ui/playground-icon-linear-beam.png"
+          alt=""
+        />
+      </div>
+    </div>
+    <div class="playground-ui-hand-slot playground-ui-hand-slot-right">
+      <div id="playground-ui-right-slot" class="playground-ui-slot-frame">
+        <div
+          id="playground-ui-right-slot-flash"
+          class="playground-ui-slot-flash"
+        ></div>
+        <img
+          id="playground-ui-right-icon"
+          class="playground-ui-slot-icon"
+          src="{{CDN_ASSETS_URL}}/ui/playground-icon-arc-homing-beam.png"
+          alt=""
+        />
+      </div>
+    </div>
+  </div>
+  <div id="playground-ui-actions">
+    <div class="playground-ui-actions-motion-column">
+      <div class="playground-ui-actions-motion-row">
+        <div
+          class="playground-ui-action-button"
+          title="ジャンプ"
+          data-action-code="Space"
+        >
+          <svg class="playground-ui-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M11 20V8.83L7.41 12.41L6 11L12 5L18 11L16.59 12.41L13 8.83V20Z"
+              class="playground-ui-action-icon-fill"
+            />
+          </svg>
+        </div>
+        <div
+          class="playground-ui-action-button playground-ui-mobile-hide"
+          title="走る"
+          data-action-code="ShiftLeft"
+        >
+          <svg class="playground-ui-action-icon" viewBox="0 -960 960 960" aria-hidden="true">
+            <path
+              d="M520-40v-240l-84-80-40 176-276-56 16-80 192 40 64-324-72 28v136h-80v-188l158-68q35-15 51.5-19.5T480-720q21 0 39 11t29 29l40 64q26 42 70.5 69T760-520v80q-66 0-123.5-27.5T540-540l-24 120 84 80v300h-80Zm-36.5-723.5Q460-787 460-820t23.5-56.5Q507-900 540-900t56.5 23.5Q620-853 620-820t-23.5 56.5Q573-740 540-740t-56.5-23.5Z"
+              class="playground-ui-action-icon-fill"
+            />
+          </svg>
+        </div>
+        <div
+          class="playground-ui-action-button"
+          title="ダッシュ"
+          data-action-code="KeyQ"
+        >
+          <svg class="playground-ui-action-icon" viewBox="0 -960 960 960" aria-hidden="true">
+            <path
+              d="m216-160-56-56 384-384H440v80h-80v-160h233q16 0 31 6t26 17l120 119q27 27 66 42t84 16v80q-62 0-112.5-19T718-476l-40-42-88 88 90 90-262 151-40-69 172-99-68-68-266 265Zm-96-280v-80h200v80H120ZM40-560v-80h200v80H40Zm739-80q-33 0-57-23.5T698-720q0-33 24-56.5t57-23.5q33 0 57 23.5t24 56.5q0 33-24 56.5T779-640Zm-659-40v-80h200v80H120Z"
+              class="playground-ui-action-icon-fill"
+            />
+          </svg>
+        </div>
+      </div>
+    </div>
+    <div class="playground-ui-actions-weapon-row">
+      <div
+        class="playground-ui-action-button"
+        title="左手攻撃"
+        data-action-code="KeyZ"
+      >
+        <span class="playground-ui-action-letter">L</span>
+      </div>
+      <div
+        class="playground-ui-action-button"
+        title="右手攻撃"
+        data-action-code="KeyX"
+      >
+        <span class="playground-ui-action-letter">R</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const damageVignette = document.getElementById('playground-ui-damage-vignette');
+  const strongDamageVignette = document.getElementById('playground-ui-damage-vignette-strong');
+  const topDamage = document.getElementById('playground-ui-top-damage');
+  const topKills = document.getElementById('playground-ui-top-kills');
+  const topElapsed = document.getElementById('playground-ui-top-elapsed');
+  const leftSlot = document.getElementById('playground-ui-left-slot');
+  const leftSlotFlash = document.getElementById('playground-ui-left-slot-flash');
+  const leftIcon = document.getElementById('playground-ui-left-icon');
+  const rightSlot = document.getElementById('playground-ui-right-slot');
+  const rightSlotFlash = document.getElementById('playground-ui-right-slot-flash');
+  const rightIcon = document.getElementById('playground-ui-right-icon');
+  const actionButtons = Array.from(document.querySelectorAll('[data-action-code]'));
+  const actionButtonByCode = new Map();
+  const actionPointerButtonById = new Map();
+  const actionKeyByCode = {
+    Space: ' ',
+    ShiftLeft: 'Shift',
+    ShiftRight: 'Shift',
+    KeyQ: 'q',
+    KeyZ: 'z',
+    KeyX: 'x',
+  };
+  let damageVignetteAnimation;
+  let strongDamageVignetteAnimation;
+  let currentEquipmentIconIds = null;
+  let currentControlsDisabled = false;
+  let currentDashDisabled = false;
+  let currentEquipmentDisabled = false;
+  let currentLeftEquipmentDisabled = false;
+  let currentLeftEquipmentSwitchDisabled = false;
+  let currentRightEquipmentDisabled = false;
+  let currentRightEquipmentSwitchDisabled = false;
+  const uiEventAbortController = window.__playgroundUiEventAbortController;
+  uiEventAbortController?.abort();
+  window.__playgroundUiEventAbortController = new AbortController();
+  const { signal } = window.__playgroundUiEventAbortController;
+  const overlayStartAtMs = Date.now();
+
+  const updateElapsedTime = () => {
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - overlayStartAtMs) / 1000));
+    const hours = Math.floor(elapsedSeconds / 3600);
+    const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+    const seconds = elapsedSeconds % 60;
+
+    topElapsed.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  updateElapsedTime();
+  const elapsedTimeIntervalId = window.setInterval(updateElapsedTime, 250);
+  signal.addEventListener('abort', () => window.clearInterval(elapsedTimeIntervalId), { once: true });
+
+  const isEquipmentSlotDisabled = (slot) => {
+    return slot === 'left' ? currentLeftEquipmentDisabled : currentRightEquipmentDisabled;
+  };
+
+  const isEquipmentSlotSwitchDisabled = (slot) => {
+    return slot === 'left' ? currentLeftEquipmentSwitchDisabled : currentRightEquipmentSwitchDisabled;
+  };
+
+  const sendCycleEquipmentRequest = (slot) => {
+    if (isEquipmentSlotSwitchDisabled(slot)) {
+      return;
+    }
+
+    hytopia.sendData({
+      type: 'cycle-equipment',
+      slot,
+    });
+  };
+
+  const resolveEquipmentIconUri = (iconPath) => {
+    if (!iconPath || typeof iconPath !== 'string') {
+      return undefined;
+    }
+
+    if (/^https?:\/\//.test(iconPath)) {
+      return iconPath;
+    }
+
+    const normalizedPath = iconPath.replace(/^\/+/, '');
+    return `{{CDN_ASSETS_URL}}/${normalizedPath}`;
+  };
+
+  actionButtons.forEach((button) => {
+    const code = button.dataset.actionCode;
+    if (!code) {
+      return;
+    }
+
+    actionButtonByCode.set(code, button);
+
+    if (code === 'ShiftLeft') {
+      actionButtonByCode.set('ShiftRight', button);
+    }
+  });
+
+  const setActionButtonPressed = (code, pressed) => {
+    const button = actionButtonByCode.get(code);
+    if (!button) {
+      return;
+    }
+
+    button.classList.toggle('playground-ui-action-button-pressed', pressed);
+  };
+
+  const setActionButtonDisabled = (code, disabled) => {
+    const button = actionButtonByCode.get(code);
+    if (!button) {
+      return;
+    }
+
+    button.classList.toggle('playground-ui-action-button-disabled', disabled);
+  };
+
+  const isActionDisabled = (code) => {
+    return (
+      (code === 'Space' && currentControlsDisabled)
+      || 
+      (code === 'KeyQ' && (currentDashDisabled || currentEquipmentDisabled))
+      || ((code === 'ShiftLeft' || code === 'ShiftRight') && currentEquipmentDisabled)
+      || (code === 'KeyZ' && currentLeftEquipmentDisabled)
+      || (code === 'KeyX' && currentRightEquipmentDisabled)
+    );
+  };
+
+  const dispatchActionKeyboardEvent = (type, code) => {
+    const key = actionKeyByCode[code] ?? code;
+    window.dispatchEvent(new KeyboardEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      code,
+      key,
+    }));
+  };
+
+  const animateSlotSwapFeedback = (slotElement, iconElement, flashElement) => {
+    if (!slotElement || !iconElement || !flashElement) {
+      return;
+    }
+
+    slotElement.getAnimations().forEach((animation) => animation.cancel());
+    iconElement.getAnimations().forEach((animation) => animation.cancel());
+    flashElement.getAnimations().forEach((animation) => animation.cancel());
+
+    slotElement.animate([
+      {
+        transform: 'scale(1)',
+      },
+      {
+        transform: 'scale(1.045)',
+        offset: 0.42,
+      },
+      {
+        transform: 'scale(1)',
+      },
+    ], {
+      duration: 180,
+      easing: 'ease-out',
+      fill: 'none',
+    });
+
+    iconElement.animate([
+      {
+        transform: 'scale(1.08)',
+      },
+      {
+        transform: 'scale(1.16)',
+        offset: 0.42,
+      },
+      {
+        transform: 'scale(1.08)',
+      },
+    ], {
+      duration: 180,
+      easing: 'ease-out',
+      fill: 'none',
+    });
+
+    flashElement.animate([
+      {
+        opacity: 0,
+      },
+      {
+        opacity: 0.72,
+        offset: 0.34,
+      },
+      {
+        opacity: 0,
+      },
+    ], {
+      duration: 180,
+      easing: 'ease-out',
+      fill: 'none',
+    });
+  };
+
+  const swallowMobileJoystickStart = (event) => {
+    if (!document.documentElement.classList.contains('mobile') && !document.body.classList.contains('mobile')) {
+      return;
+    }
+
+    event.stopPropagation();
+  };
+
+  leftSlot?.addEventListener('touchstart', swallowMobileJoystickStart, { signal, capture: true, passive: false });
+  rightSlot?.addEventListener('touchstart', swallowMobileJoystickStart, { signal, capture: true, passive: false });
+
+  leftSlot?.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    sendCycleEquipmentRequest('left');
+  }, { signal, capture: true });
+
+  rightSlot?.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    sendCycleEquipmentRequest('right');
+  }, { signal });
+
+  actionButtons.forEach((button) => {
+    const code = button.dataset.actionCode;
+    if (!code) {
+      return;
+    }
+
+    button.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      const shouldDispatch = !isActionDisabled(code);
+
+      actionPointerButtonById.set(event.pointerId, {
+        code,
+        dispatched: shouldDispatch,
+      });
+      button.setPointerCapture?.(event.pointerId);
+      setActionButtonPressed(code, true);
+
+      if (shouldDispatch) {
+        dispatchActionKeyboardEvent('keydown', code);
+      }
+    }, { signal });
+
+    const releaseActionButton = (event) => {
+      const activePointerState = actionPointerButtonById.get(event.pointerId);
+      if (!activePointerState) {
+        return;
+      }
+
+      actionPointerButtonById.delete(event.pointerId);
+      button.releasePointerCapture?.(event.pointerId);
+      setActionButtonPressed(activePointerState.code, false);
+
+      if (activePointerState.dispatched) {
+        dispatchActionKeyboardEvent('keyup', activePointerState.code);
+      }
+    };
+
+    button.addEventListener('pointerup', releaseActionButton, { signal });
+    button.addEventListener('pointercancel', releaseActionButton, { signal });
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.repeat) {
+      return;
+    }
+
+    if (event.key === 'ArrowLeft') {
+      if (currentLeftEquipmentSwitchDisabled) {
+        return;
+      }
+      event.preventDefault();
+      sendCycleEquipmentRequest('left');
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      if (currentRightEquipmentSwitchDisabled) {
+        return;
+      }
+      event.preventDefault();
+      sendCycleEquipmentRequest('right');
+    }
+  }, { signal });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.repeat) {
+      return;
+    }
+
+    setActionButtonPressed(event.code, true);
+  }, { signal, capture: true });
+
+  window.addEventListener('keyup', (event) => {
+    setActionButtonPressed(event.code, false);
+  }, { signal, capture: true });
+
+  window.addEventListener('blur', () => {
+    actionPointerButtonById.forEach((pointerState) => {
+      setActionButtonPressed(pointerState.code, false);
+      if (pointerState.dispatched) {
+        dispatchActionKeyboardEvent('keyup', pointerState.code);
+      }
+    });
+    actionPointerButtonById.clear();
+    actionButtonByCode.forEach((button) => {
+      button.classList.remove('playground-ui-action-button-pressed');
+    });
+  }, { signal });
+
+  const animateDamageVignette = (element, options) => {
+    if (!element) {
+      return;
+    }
+
+    options.animationRef.current?.cancel();
+    options.animationRef.current = element.animate([
+      {
+        opacity: 0,
+        transform: options.startScale,
+        filter: options.startFilter,
+      },
+      {
+        opacity: 1,
+        offset: options.peakOffset,
+        transform: 'scale(1)',
+        filter: options.peakFilter,
+      },
+      {
+        opacity: 0,
+        transform: options.endScale,
+        filter: options.endFilter,
+      },
+    ], {
+      duration: options.duration,
+      easing: 'ease-out',
+      fill: 'none',
+    });
+  };
+
+  hytopia.registerSceneUITemplate('playground:damage-number', (_id, onState) => {
+    const root = document.createElement('div');
+    root.className = 'playground-scene-damage-number';
+
+    const value = document.createElement('span');
+    value.className = 'playground-scene-damage-number-value';
+    root.appendChild(value);
+
+    onState((state) => {
+      const amount = Math.max(0, Math.floor(Number(state?.amount ?? 0)));
+      value.textContent = `-${amount}`;
+
+      root.classList.remove('playground-scene-damage-number-animate');
+      void root.offsetWidth;
+      root.classList.add('playground-scene-damage-number-animate');
+    });
+
+    return root;
+  });
+
+  hytopia.onData((data) => {
+    if (!data) {
+      return;
+    }
+
+    if (data.type === 'damage' && damageVignette) {
+      const isStrongDamage = data.variant === 'strong';
+      if (isStrongDamage) {
+        animateDamageVignette(strongDamageVignette, {
+          animationRef: {
+            get current() { return strongDamageVignetteAnimation; },
+            set current(value) { strongDamageVignetteAnimation = value; },
+          },
+          duration: 760,
+          startScale: 'scale(1.12)',
+          peakOffset: 0.16,
+          endScale: 'scale(0.98)',
+          startFilter: 'saturate(1.3) brightness(1.08)',
+          peakFilter: 'saturate(1.65) brightness(1.18)',
+          endFilter: 'saturate(1.18) brightness(1.04)',
+        });
+      }
+
+      animateDamageVignette(damageVignette, {
+        animationRef: {
+          get current() { return damageVignetteAnimation; },
+          set current(value) { damageVignetteAnimation = value; },
+        },
+        duration: isStrongDamage ? 520 : 320,
+        startScale: isStrongDamage ? 'scale(1.08)' : 'scale(1.04)',
+        peakOffset: isStrongDamage ? 0.16 : 0.18,
+        endScale: isStrongDamage ? 'scale(0.985)' : 'scale(0.995)',
+        startFilter: isStrongDamage ? 'saturate(1.12) brightness(1.04)' : 'none',
+        peakFilter: isStrongDamage ? 'saturate(1.28) brightness(1.1)' : 'none',
+        endFilter: isStrongDamage ? 'saturate(1.08) brightness(1.02)' : 'none',
+      });
+      return;
+    }
+
+    if (data.type !== 'equipment-ui') {
+      return;
+    }
+
+    const nextEquipmentIconIds = {
+      left: data.leftIconPath,
+      right: data.rightIconPath,
+    };
+
+    const leftIconUri = resolveEquipmentIconUri(data.leftIconPath);
+    if (leftIcon && leftIconUri) {
+      leftIcon.src = leftIconUri;
+    }
+
+    const rightIconUri = resolveEquipmentIconUri(data.rightIconPath);
+    if (rightIcon && rightIconUri) {
+      rightIcon.src = rightIconUri;
+    }
+
+    currentControlsDisabled = !!data.controlsDisabled;
+    currentEquipmentDisabled = !!data.equipmentDisabled;
+    currentLeftEquipmentDisabled = !!data.leftEquipmentDisabled;
+    currentLeftEquipmentSwitchDisabled = !!data.leftEquipmentSwitchDisabled;
+    currentRightEquipmentDisabled = !!data.rightEquipmentDisabled;
+    currentRightEquipmentSwitchDisabled = !!data.rightEquipmentSwitchDisabled;
+    currentDashDisabled = !!data.dashDisabled;
+    if (topDamage) {
+      topDamage.textContent = `-${Math.max(0, Math.floor(Number(data.damageTaken ?? 0)))}`;
+    }
+    if (topKills) {
+      topKills.textContent = String(Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0))));
+    }
+    setActionButtonDisabled('Space', currentControlsDisabled);
+    setActionButtonDisabled('KeyQ', currentDashDisabled || currentEquipmentDisabled);
+    setActionButtonDisabled('ShiftLeft', currentEquipmentDisabled);
+    setActionButtonDisabled('KeyZ', currentLeftEquipmentDisabled);
+    setActionButtonDisabled('KeyX', currentRightEquipmentDisabled);
+    leftSlot?.classList.toggle('playground-ui-slot-frame-disabled', currentLeftEquipmentDisabled);
+    rightSlot?.classList.toggle('playground-ui-slot-frame-disabled', currentRightEquipmentDisabled);
+
+    if (currentEquipmentIconIds) {
+      if (currentEquipmentIconIds.left !== nextEquipmentIconIds.left) {
+        animateSlotSwapFeedback(leftSlot, leftIcon, leftSlotFlash);
+      }
+
+      if (currentEquipmentIconIds.right !== nextEquipmentIconIds.right) {
+        animateSlotSwapFeedback(rightSlot, rightIcon, rightSlotFlash);
+      }
+    }
+
+    currentEquipmentIconIds = nextEquipmentIconIds;
+  });
+</script>
+
+<style>
+  #playground-ui-root {
+    inset: 0;
+    pointer-events: none;
+    position: absolute;
+  }
+
+  #playground-ui-top-stats {
+    align-items: center;
+    backdrop-filter: blur(3px);
+    background:
+      radial-gradient(circle at 32% 28%, rgba(82, 69, 45, 0.2), rgba(82, 69, 45, 0) 52%),
+      linear-gradient(145deg, rgba(28, 24, 19, 0.94), rgba(7, 7, 6, 0.98));
+    border: 1px solid rgba(181, 160, 113, 0.62);
+    border-radius: 999px;
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    left: 0;
+    margin: 0 auto;
+    max-width: fit-content;
+    padding: 8px 16px 9px;
+    position: absolute;
+    right: 0;
+    top: calc(18px + var(--hytopia-safe-area-top, 0px));
+    user-select: none;
+  }
+
+  #playground-ui-top-stats::after {
+    border: 1px solid rgba(255, 233, 169, 0.14);
+    border-radius: 999px;
+    content: '';
+    inset: 4px;
+    pointer-events: none;
+    position: absolute;
+  }
+
+  .playground-ui-top-stat {
+    font-family: Baskerville, "Palatino Linotype", Palatino, "Times New Roman", serif;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    min-width: 6ch;
+    position: relative;
+    text-align: center;
+    z-index: 1;
+  }
+
+  .playground-ui-top-stat-damage {
+    color: #ba4b41;
+  }
+
+  .playground-ui-top-stat-kills {
+    color: #7ba091;
+  }
+
+  .playground-ui-top-elapsed {
+    color: rgba(219, 207, 176, 0.94);
+    display: flex;
+    font-family: Baskerville, "Palatino Linotype", Palatino, "Times New Roman", serif;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    min-width: 8ch;
+    position: relative;
+    align-items: center;
+    justify-content: flex-end;
+    text-align: right;
+    z-index: 1;
+  }
+
+  #playground-ui-hud {
+    align-items: end;
+    bottom: calc(24px + var(--hytopia-safe-area-bottom, 0px));
+    display: flex;
+    gap: 8px;
+    left: calc(24px + var(--hytopia-safe-area-left, 0px));
+    position: absolute;
+    user-select: none;
+  }
+
+  #playground-ui-actions {
+    align-items: end;
+    bottom: calc(24px + var(--hytopia-safe-area-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: absolute;
+    right: calc(24px + var(--hytopia-safe-area-right, 0px));
+    user-select: none;
+  }
+
+  .playground-ui-actions-weapon-row {
+    display: flex;
+    gap: 12px;
+    justify-content: end;
+  }
+
+  .playground-ui-actions-motion-column {
+    display: flex;
+    justify-content: end;
+  }
+
+  .playground-ui-actions-motion-row {
+    display: flex;
+    gap: 12px;
+    justify-content: end;
+  }
+
+  html.mobile .playground-ui-mobile-hide,
+  body.mobile .playground-ui-mobile-hide {
+    display: none;
+  }
+
+  .playground-ui-action-button {
+    background:
+      radial-gradient(circle at 32% 28%, rgba(82, 69, 45, 0.32), rgba(82, 69, 45, 0) 52%),
+      linear-gradient(145deg, rgba(34, 29, 23, 0.96), rgba(8, 8, 7, 0.99));
+    border: 1px solid rgba(171, 149, 105, 0.72);
+    border-radius: 999px;
+    height: 56px;
+    position: relative;
+    pointer-events: auto;
+    transition:
+      transform 120ms ease-out,
+      box-shadow 120ms ease-out,
+      border-color 120ms ease-out,
+      background 120ms ease-out;
+    width: 56px;
+  }
+
+  .playground-ui-action-button::after {
+    border: 1px solid rgba(255, 233, 169, 0.14);
+    border-radius: 999px;
+    content: '';
+    inset: 4px;
+    position: absolute;
+    transition: border-color 120ms ease-out, opacity 120ms ease-out;
+  }
+
+  .playground-ui-action-button-pressed {
+    background:
+      radial-gradient(circle at 34% 30%, rgba(118, 102, 69, 0.42), rgba(118, 102, 69, 0) 56%),
+      linear-gradient(145deg, rgba(46, 39, 28, 0.98), rgba(13, 12, 10, 1));
+    border-color: rgba(219, 193, 136, 0.92);
+    transform: translateY(2px) scale(0.965);
+  }
+
+  .playground-ui-action-button-pressed::after {
+    border-color: rgba(255, 235, 182, 0.28);
+  }
+
+  .playground-ui-action-button-disabled {
+    background:
+      radial-gradient(circle at 32% 28%, rgba(48, 44, 38, 0.18), rgba(48, 44, 38, 0) 52%),
+      linear-gradient(145deg, rgba(20, 18, 16, 0.94), rgba(6, 6, 6, 0.98));
+    border-color: rgba(105, 96, 80, 0.58);
+  }
+
+  .playground-ui-action-button-disabled::after {
+    border-color: rgba(160, 145, 117, 0.08);
+  }
+
+  .playground-ui-action-button-disabled.playground-ui-action-button-pressed {
+    transform: translateY(2px) scale(0.965);
+  }
+
+  .playground-ui-action-button-disabled.playground-ui-action-button-pressed::after {
+    border-color: rgba(160, 145, 117, 0.08);
+  }
+
+  .playground-ui-action-button-disabled .playground-ui-action-icon,
+  .playground-ui-action-button-disabled .playground-ui-action-letter {
+    opacity: 0.34;
+  }
+
+  .playground-ui-action-button-disabled.playground-ui-action-button-pressed .playground-ui-action-icon,
+  .playground-ui-action-button-disabled.playground-ui-action-button-pressed .playground-ui-action-letter {
+    opacity: 0.34;
+    transform: scale(0.92);
+  }
+
+  .playground-ui-action-icon {
+    height: 28px;
+    left: 14px;
+    position: absolute;
+    top: 14px;
+    transition: transform 120ms ease-out, opacity 120ms ease-out;
+    width: 28px;
+    z-index: 1;
+  }
+
+  .playground-ui-action-letter {
+    align-items: center;
+    color: rgba(241, 232, 208, 0.98);
+    display: inline-flex;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 29px;
+    height: 100%;
+    justify-content: center;
+    left: 0;
+    letter-spacing: 0.04em;
+    position: absolute;
+    top: 0;
+    transition: transform 120ms ease-out, opacity 120ms ease-out;
+    width: 100%;
+    z-index: 1;
+  }
+
+  .playground-ui-action-button-pressed .playground-ui-action-icon,
+  .playground-ui-action-button-pressed .playground-ui-action-letter {
+    opacity: 0.96;
+    transform: scale(0.92);
+  }
+
+  .playground-ui-action-icon-stroke {
+    fill: none;
+    stroke: rgba(236, 227, 203, 0.95);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+  }
+
+  .playground-ui-action-icon-fill {
+    fill: rgba(231, 223, 203, 0.94);
+  }
+
+  .playground-ui-action-icon-glow {
+    fill: none;
+    stroke: rgba(177, 198, 235, 0.52);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.2;
+  }
+
+  .playground-ui-action-icon-dim {
+    fill: none;
+    stroke: rgba(236, 227, 203, 0.56);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+  }
+
+  .playground-ui-hand-slot {
+    color: rgba(223, 212, 191, 0.96);
+    display: flex;
+    position: relative;
+    width: 60px;
+  }
+
+  .playground-ui-slot-frame {
+    background:
+      linear-gradient(145deg, rgba(47, 39, 28, 0.97), rgba(8, 8, 7, 0.98));
+    border: 1px solid rgba(181, 160, 113, 0.74);
+    aspect-ratio: 2 / 3;
+    overflow: hidden;
+    pointer-events: auto;
+    position: relative;
+    will-change: transform;
+    width: 100%;
+  }
+
+  .playground-ui-slot-frame-disabled {
+    border-color: rgba(107, 98, 82, 0.58);
+    opacity: 0.72;
+  }
+
+  .playground-ui-slot-frame::after {
+    border: 1px solid rgba(255, 233, 169, 0.16);
+    content: '';
+    inset: 5px;
+    position: absolute;
+  }
+
+  .playground-ui-slot-frame-disabled::after {
+    border-color: rgba(160, 145, 117, 0.08);
+  }
+
+  .playground-ui-slot-icon {
+    display: block;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    position: relative;
+    transform: scale(1.08);
+    transform-origin: center;
+    will-change: transform;
+    width: 100%;
+  }
+
+  .playground-ui-slot-frame-disabled .playground-ui-slot-icon {
+    opacity: 0.56;
+  }
+
+  .playground-ui-slot-flash {
+    background:
+      radial-gradient(circle at 50% 38%, rgba(227, 239, 255, 0.92), rgba(168, 197, 255, 0.44) 34%, rgba(108, 126, 193, 0.16) 58%, rgba(108, 126, 193, 0) 76%),
+      linear-gradient(180deg, rgba(255, 241, 198, 0.24), rgba(255, 241, 198, 0));
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    will-change: opacity;
+    z-index: 1;
+  }
+
+  .playground-scene-damage-number {
+    color: #f6e8da;
+    font-family: Baskerville, "Palatino Linotype", Palatino, "Times New Roman", serif;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    opacity: 0;
+    text-align: center;
+    transform: translate3d(0, 0, 0) scale3d(0.9, 0.9, 1);
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .playground-scene-damage-number-value {
+    background: linear-gradient(180deg, #ffd8d1 0%, #ff8d84 38%, #e2382d 72%, #6e0a07 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline-block;
+    filter: drop-shadow(0 0 6px rgba(98, 14, 14, 0.18));
+    transform: skewX(-7deg);
+  }
+
+  .playground-scene-damage-number-animate {
+    animation: playground-scene-damage-number-rise 900ms cubic-bezier(0.22, 0.72, 0.2, 1) forwards;
+  }
+
+  @keyframes playground-scene-damage-number-rise {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0) scale3d(0.82, 0.82, 1);
+    }
+
+    14% {
+      opacity: 1;
+      transform: translate3d(0, -2px, 0) scale3d(1.08, 1.08, 1);
+    }
+
+    72% {
+      opacity: 1;
+      transform: translate3d(0, -38px, 0) scale3d(1, 1, 1);
+    }
+
+    100% {
+      opacity: 0;
+      transform: translate3d(0, -58px, 0) scale3d(0.96, 0.96, 1);
+    }
+  }
+
+  #playground-ui-damage-vignette,
+  #playground-ui-damage-vignette-strong {
+    display: block;
+    height: 100%;
+    inset: 0;
+    object-fit: fill;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transform: scale(1.02);
+    user-select: none;
+    will-change: opacity, transform;
+    width: 100%;
+  }
+</style>
