@@ -12,6 +12,8 @@
   <div id="playground-ui-top-stats" aria-hidden="true">
     <span id="playground-ui-top-kills" class="playground-ui-top-stat playground-ui-top-stat-kills">0</span>
     <span id="playground-ui-top-damage" class="playground-ui-top-stat playground-ui-top-stat-damage">-0</span>
+    <span id="playground-ui-top-extra-1" class="playground-ui-top-stat playground-ui-top-stat-damage" hidden>0</span>
+    <span id="playground-ui-top-extra-2" class="playground-ui-top-stat playground-ui-top-stat-damage" hidden>0</span>
     <span id="playground-ui-top-elapsed" class="playground-ui-top-elapsed">00:00:00</span>
   </div>
   <div id="playground-ui-hud">
@@ -108,12 +110,23 @@
       </div>
     </div>
   </div>
+  <div id="playground-ui-battle-result" hidden>
+    <div id="playground-ui-battle-result-panel">
+      <div id="playground-ui-battle-result-label">WIN</div>
+      <div id="playground-ui-battle-result-actions">
+        <button id="playground-ui-battle-retry" type="button">Retry</button>
+        <button id="playground-ui-battle-menu" type="button">Back to Menu</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
   const damageVignette = document.getElementById('playground-ui-damage-vignette');
   const strongDamageVignette = document.getElementById('playground-ui-damage-vignette-strong');
   const topDamage = document.getElementById('playground-ui-top-damage');
+  const topExtra1 = document.getElementById('playground-ui-top-extra-1');
+  const topExtra2 = document.getElementById('playground-ui-top-extra-2');
   const topKills = document.getElementById('playground-ui-top-kills');
   const topElapsed = document.getElementById('playground-ui-top-elapsed');
   const leftSlot = document.getElementById('playground-ui-left-slot');
@@ -123,6 +136,10 @@
   const rightSlotFlash = document.getElementById('playground-ui-right-slot-flash');
   const rightIcon = document.getElementById('playground-ui-right-icon');
   const actionButtons = Array.from(document.querySelectorAll('[data-action-code]'));
+  const battleResultOverlay = document.getElementById('playground-ui-battle-result');
+  const battleResultLabel = document.getElementById('playground-ui-battle-result-label');
+  const battleRetryButton = document.getElementById('playground-ui-battle-retry');
+  const battleMenuButton = document.getElementById('playground-ui-battle-menu');
   const actionButtonByCode = new Map();
   const actionPointerButtonById = new Map();
   const iconPreloadEntries = new Map();
@@ -151,6 +168,7 @@
   let damageVignetteAnimation;
   let strongDamageVignetteAnimation;
   let currentEquipmentIconIds = null;
+  let currentHudMode = 'default';
   let currentControlsDisabled = false;
   let currentDashDisabled = false;
   let currentEquipmentDisabled = false;
@@ -163,6 +181,7 @@
   window.__playgroundUiEventAbortController = new AbortController();
   const { signal } = window.__playgroundUiEventAbortController;
   const overlayStartAtMs = Date.now();
+  let currentBattleResult = null;
 
   const updateElapsedTime = () => {
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - overlayStartAtMs) / 1000));
@@ -516,6 +535,48 @@
     });
   }, { signal });
 
+  const updateBattleResultOverlay = (battleResult) => {
+    currentBattleResult = battleResult === 'victory' || battleResult === 'defeat' ? battleResult : null;
+    if (!battleResultOverlay || !battleResultLabel) {
+      return;
+    }
+
+    if (!currentBattleResult) {
+      battleResultOverlay.hidden = true;
+      battleResultOverlay.classList.remove('is-defeat');
+      battleResultOverlay.classList.remove('is-victory');
+      return;
+    }
+
+    battleResultOverlay.hidden = false;
+    battleResultOverlay.classList.toggle('is-victory', currentBattleResult === 'victory');
+    battleResultOverlay.classList.toggle('is-defeat', currentBattleResult === 'defeat');
+    battleResultLabel.textContent = currentBattleResult === 'victory' ? 'WIN' : 'LOSE';
+  };
+
+  battleRetryButton?.addEventListener('click', () => {
+    window.location.reload();
+  }, { signal });
+
+  battleMenuButton?.addEventListener('click', () => {
+    const url = new URL(window.location.href);
+    const removableKeys = [
+      'mode',
+      'soloMode',
+      'connectionId',
+      'botCount',
+      'botMode',
+      'botModes',
+      'disableEnemies',
+      'spawnLayout',
+    ];
+
+    removableKeys.forEach((key) => url.searchParams.delete(key));
+    window.location.href = url.toString();
+  }, { signal });
+
+  let localBattleUsername = '';
+
   const animateDamageVignette = (element, options) => {
     if (!element) {
       return;
@@ -566,6 +627,36 @@
     return root;
   });
 
+  hytopia.registerSceneUITemplate('playground:player-health', (_id, onState) => {
+    const root = document.createElement('div');
+    root.className = 'playground-scene-player-health';
+
+    const name = document.createElement('span');
+    name.className = 'playground-scene-player-health-name';
+
+    const bar = document.createElement('div');
+    bar.className = 'playground-scene-player-health-bar';
+
+    const fill = document.createElement('div');
+    fill.className = 'playground-scene-player-health-fill';
+    bar.appendChild(fill);
+    root.appendChild(name);
+    root.appendChild(bar);
+
+    onState((state) => {
+      const currentHealth = Math.max(0, Number(state?.currentHealth ?? 0));
+      const maxHealth = Math.max(1, Number(state?.maxHealth ?? 100));
+      const healthRatio = Math.max(0, Math.min(1, currentHealth / maxHealth));
+      const username = typeof state?.username === 'string' ? state.username : '';
+
+      name.textContent = localBattleUsername && username === localBattleUsername ? 'You' : username;
+      fill.style.transform = `scaleX(${healthRatio})`;
+      root.classList.toggle('playground-scene-player-health-critical', healthRatio <= 0.25);
+    });
+
+    return root;
+  });
+
   hytopia.onData((data) => {
     if (!data) {
       return;
@@ -609,6 +700,8 @@
       return;
     }
 
+    localBattleUsername = typeof data.selfUsername === 'string' ? data.selfUsername : localBattleUsername;
+
     const nextEquipmentIconIds = {
       left: data.leftIconPath,
       right: data.rightIconPath,
@@ -627,12 +720,44 @@
     currentRightEquipmentDisabled = !!data.rightEquipmentDisabled;
     currentRightEquipmentSwitchDisabled = !!data.rightEquipmentSwitchDisabled;
     currentDashDisabled = !!data.dashDisabled;
-    if (topDamage) {
-      topDamage.textContent = `-${Math.max(0, Math.floor(Number(data.damageTaken ?? 0)))}`;
+    currentHudMode = data.hudMode === 'battle' ? 'battle' : 'default';
+    updateBattleResultOverlay(data.battleResult);
+
+    if (currentHudMode === 'battle') {
+      const battleHealths = Array.isArray(data.battleHealths)
+        ? data.battleHealths.map((value) => Math.max(0, Math.floor(Number(value ?? 0)))).slice(0, 4)
+        : undefined;
+      const isBattleRoyaleHud = !!battleHealths && battleHealths.length >= 4;
+
+      topExtra1.hidden = !isBattleRoyaleHud;
+      topExtra2.hidden = !isBattleRoyaleHud;
+      topElapsed.hidden = isBattleRoyaleHud;
+
+      if (isBattleRoyaleHud) {
+        topKills.textContent = String(battleHealths[0] ?? 0);
+        topDamage.textContent = String(battleHealths[1] ?? 0);
+        topExtra1.textContent = String(battleHealths[2] ?? 0);
+        topExtra2.textContent = String(battleHealths[3] ?? 0);
+      } else {
+        const selfHealth = Math.max(0, Math.floor(Number(data.selfHealth ?? 0)));
+        const opponentHealth = Math.max(0, Math.floor(Number(data.opponentHealth ?? 0)));
+
+        topKills.textContent = String(selfHealth);
+        topDamage.textContent = String(opponentHealth);
+      }
+    } else {
+      topExtra1.hidden = true;
+      topExtra2.hidden = true;
+      topElapsed.hidden = false;
+      if (topDamage) {
+        topDamage.textContent = `-${Math.max(0, Math.floor(Number(data.damageTaken ?? 0)))}`;
+      }
+
+      if (topKills) {
+        topKills.textContent = String(Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0))));
+      }
     }
-    if (topKills) {
-      topKills.textContent = String(Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0))));
-    }
+
     setActionButtonDisabled('Space', currentControlsDisabled);
     setActionButtonDisabled('KeyQ', currentDashDisabled || currentEquipmentDisabled);
     setActionButtonDisabled('ShiftLeft', currentEquipmentDisabled);
@@ -658,8 +783,8 @@
 <style>
   #playground-ui-root {
     inset: 0;
-    pointer-events: none;
     position: absolute;
+    pointer-events: none;
   }
 
   #playground-ui-top-stats {
@@ -738,6 +863,71 @@
     left: calc(24px + var(--hytopia-safe-area-left, 0px));
     position: absolute;
     user-select: none;
+  }
+
+  #playground-ui-battle-result {
+    align-items: center;
+    backdrop-filter: blur(4px);
+    background: rgba(7, 7, 7, 0.18);
+    display: flex;
+    inset: 0;
+    justify-content: center;
+    pointer-events: auto;
+    position: absolute;
+  }
+
+  #playground-ui-battle-result[hidden] {
+    display: none;
+  }
+
+  #playground-ui-battle-result-panel {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    pointer-events: auto;
+  }
+
+  #playground-ui-battle-result-label {
+    color: rgba(241, 241, 241, 0.98);
+    font-family: Baskerville, "Palatino Linotype", Palatino, "Times New Roman", serif;
+    font-size: 56px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  }
+
+  #playground-ui-battle-result.is-defeat #playground-ui-battle-result-label {
+    color: rgba(233, 198, 198, 0.98);
+  }
+
+  #playground-ui-battle-result-actions {
+    display: flex;
+    gap: 10px;
+    pointer-events: auto;
+  }
+
+  #playground-ui-battle-result-actions button {
+    appearance: none;
+    background: rgba(18, 18, 18, 0.78);
+    border: 1px solid rgba(241, 241, 241, 0.22);
+    border-radius: 999px;
+    color: #f1f1f1;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 11px 16px;
+    pointer-events: auto;
+  }
+
+  #playground-ui-battle-result-actions button:hover,
+  #playground-ui-battle-result-actions button:focus-visible {
+    background: rgba(28, 28, 28, 0.92);
+    border-color: rgba(241, 241, 241, 0.36);
+    outline: none;
   }
 
   #playground-ui-actions {
@@ -1036,6 +1226,45 @@
 
   .playground-scene-damage-number-animate {
     animation: playground-scene-damage-number-rise 900ms cubic-bezier(0.22, 0.72, 0.2, 1) forwards;
+  }
+
+  .playground-scene-player-health {
+    align-items: center;
+    display: inline-flex;
+    gap: 6px;
+    pointer-events: none;
+  }
+
+  .playground-scene-player-health-name {
+    color: #F1F1F1;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: none;
+    white-space: nowrap;
+  }
+
+  .playground-scene-player-health-bar {
+    background: rgba(241, 241, 241, 0.18);
+    border-radius: 999px;
+    box-shadow: none;
+    height: 4px;
+    overflow: hidden;
+    position: relative;
+    width: 36px;
+  }
+
+  .playground-scene-player-health-fill {
+    background: #F1F1F1;
+    border-radius: inherit;
+    height: 100%;
+    transform-origin: left center;
+    width: 100%;
+  }
+
+  .playground-scene-player-health-critical .playground-scene-player-health-fill {
+    background: rgba(241, 241, 241, 0.76);
   }
 
   @keyframes playground-scene-damage-number-rise {
