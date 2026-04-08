@@ -575,8 +575,6 @@
     window.location.href = url.toString();
   }, { signal });
 
-  let localBattleUsername = '';
-
   const animateDamageVignette = (element, options) => {
     if (!element) {
       return;
@@ -649,7 +647,7 @@
       const healthRatio = Math.max(0, Math.min(1, currentHealth / maxHealth));
       const username = typeof state?.username === 'string' ? state.username : '';
 
-      name.textContent = localBattleUsername && username === localBattleUsername ? 'You' : username;
+      name.textContent = username;
       fill.style.transform = `scaleX(${healthRatio})`;
       root.classList.toggle('playground-scene-player-health-critical', healthRatio <= 0.25);
     });
@@ -699,8 +697,6 @@
     if (data.type !== 'equipment-ui') {
       return;
     }
-
-    localBattleUsername = typeof data.selfUsername === 'string' ? data.selfUsername : localBattleUsername;
 
     const nextEquipmentIconIds = {
       left: data.leftIconPath,
