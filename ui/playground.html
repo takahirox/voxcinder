@@ -113,6 +113,7 @@
   <div id="playground-ui-battle-result" hidden>
     <div id="playground-ui-battle-result-panel">
       <div id="playground-ui-battle-result-label">WIN</div>
+      <div id="playground-ui-battle-result-summary" hidden></div>
       <div id="playground-ui-battle-result-actions">
         <button id="playground-ui-battle-retry" type="button">Retry</button>
         <button id="playground-ui-battle-menu" type="button">Back to Menu</button>
@@ -138,6 +139,8 @@
   const actionButtons = Array.from(document.querySelectorAll('[data-action-code]'));
   const battleResultOverlay = document.getElementById('playground-ui-battle-result');
   const battleResultLabel = document.getElementById('playground-ui-battle-result-label');
+  const battleResultSummary = document.getElementById('playground-ui-battle-result-summary');
+  const battleResultActions = document.getElementById('playground-ui-battle-result-actions');
   const battleRetryButton = document.getElementById('playground-ui-battle-retry');
   const battleMenuButton = document.getElementById('playground-ui-battle-menu');
   const actionButtonByCode = new Map();
@@ -180,11 +183,13 @@
   uiEventAbortController?.abort();
   window.__playgroundUiEventAbortController = new AbortController();
   const { signal } = window.__playgroundUiEventAbortController;
-  const overlayStartAtMs = Date.now();
+  let elapsedOriginAtMs = Date.now();
   let currentBattleResult = null;
+  let currentEnemiesSlain = 0;
+  let currentCountdownValue = 0;
 
   const updateElapsedTime = () => {
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - overlayStartAtMs) / 1000));
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - elapsedOriginAtMs) / 1000));
     const hours = Math.floor(elapsedSeconds / 3600);
     const minutes = Math.floor((elapsedSeconds % 3600) / 60);
     const seconds = elapsedSeconds % 60;
@@ -541,17 +546,55 @@
       return;
     }
 
-    if (!currentBattleResult) {
+    if (!currentBattleResult && currentCountdownValue <= 0) {
       battleResultOverlay.hidden = true;
       battleResultOverlay.classList.remove('is-defeat');
       battleResultOverlay.classList.remove('is-victory');
+      if (battleResultSummary) {
+        battleResultSummary.hidden = true;
+        battleResultSummary.textContent = '';
+      }
+      if (battleResultActions) {
+        battleResultActions.hidden = false;
+      }
       return;
     }
 
     battleResultOverlay.hidden = false;
     battleResultOverlay.classList.toggle('is-victory', currentBattleResult === 'victory');
     battleResultOverlay.classList.toggle('is-defeat', currentBattleResult === 'defeat');
+    if (!currentBattleResult && currentCountdownValue > 0) {
+      battleResultLabel.textContent = String(currentCountdownValue);
+      if (battleResultSummary) {
+        battleResultSummary.hidden = true;
+        battleResultSummary.textContent = '';
+      }
+      if (battleResultActions) {
+        battleResultActions.hidden = true;
+      }
+      return;
+    }
+
+    if (currentHudMode === 'survival' && currentBattleResult === 'defeat') {
+      battleResultLabel.textContent = 'YOU DIED';
+      if (battleResultSummary) {
+        battleResultSummary.hidden = false;
+        battleResultSummary.textContent = `Kills ${currentEnemiesSlain}  Time ${topElapsed?.textContent ?? '00:00:00'}`;
+      }
+      if (battleResultActions) {
+        battleResultActions.hidden = false;
+      }
+      return;
+    }
+
     battleResultLabel.textContent = currentBattleResult === 'victory' ? 'WIN' : 'LOSE';
+    if (battleResultSummary) {
+      battleResultSummary.hidden = true;
+      battleResultSummary.textContent = '';
+    }
+    if (battleResultActions) {
+      battleResultActions.hidden = false;
+    }
   };
 
   battleRetryButton?.addEventListener('click', () => {
@@ -716,7 +759,12 @@
     currentRightEquipmentDisabled = !!data.rightEquipmentDisabled;
     currentRightEquipmentSwitchDisabled = !!data.rightEquipmentSwitchDisabled;
     currentDashDisabled = !!data.dashDisabled;
-    currentHudMode = data.hudMode === 'battle' ? 'battle' : 'default';
+    currentCountdownValue = Math.max(0, Math.floor(Number(data.countdownValue ?? 0)));
+    if (Number.isFinite(data.matchStartedAtEpochMs) && Number(data.matchStartedAtEpochMs) > 0) {
+      elapsedOriginAtMs = Number(data.matchStartedAtEpochMs);
+    }
+    currentHudMode = data.hudMode === 'battle' ? 'battle' : (data.hudMode === 'survival' ? 'survival' : 'default');
+    currentEnemiesSlain = Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0)));
     updateBattleResultOverlay(data.battleResult);
 
     if (currentHudMode === 'battle') {
@@ -741,6 +789,12 @@
         topKills.textContent = String(selfHealth);
         topDamage.textContent = String(opponentHealth);
       }
+    } else if (currentHudMode === 'survival') {
+      topExtra1.hidden = true;
+      topExtra2.hidden = true;
+      topElapsed.hidden = false;
+      topKills.textContent = String(Math.max(0, Math.floor(Number(data.selfHealth ?? 0))));
+      topDamage.textContent = String(currentEnemiesSlain);
     } else {
       topExtra1.hidden = true;
       topExtra2.hidden = true;
@@ -898,10 +952,23 @@
     color: rgba(233, 198, 198, 0.98);
   }
 
+  #playground-ui-battle-result-summary {
+    color: rgba(241, 241, 241, 0.82);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
   #playground-ui-battle-result-actions {
     display: flex;
     gap: 10px;
     pointer-events: auto;
+  }
+
+  #playground-ui-battle-result-actions[hidden] {
+    display: none;
   }
 
   #playground-ui-battle-result-actions button {
