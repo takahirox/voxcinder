@@ -118,7 +118,10 @@
       <div id="playground-ui-battle-result-actions">
         <button id="playground-ui-battle-retry" type="button">Retry</button>
         <button id="playground-ui-battle-menu" type="button">Back to Menu</button>
+        <button id="playground-ui-battle-share" type="button" disabled>Share on X</button>
       </div>
+      <div id="playground-ui-battle-result-leaderboard-status" hidden></div>
+      <div id="playground-ui-battle-result-leaderboard" hidden></div>
     </div>
   </div>
 </div>
@@ -142,7 +145,10 @@
   const battleResultLabel = document.getElementById('playground-ui-battle-result-label');
   const battleResultSummary = document.getElementById('playground-ui-battle-result-summary');
   const battleResultCount = document.getElementById('playground-ui-battle-result-count');
+  const battleResultLeaderboardStatus = document.getElementById('playground-ui-battle-result-leaderboard-status');
+  const battleResultLeaderboard = document.getElementById('playground-ui-battle-result-leaderboard');
   const battleResultActions = document.getElementById('playground-ui-battle-result-actions');
+  const battleShareButton = document.getElementById('playground-ui-battle-share');
   const battleRetryButton = document.getElementById('playground-ui-battle-retry');
   const battleMenuButton = document.getElementById('playground-ui-battle-menu');
   const actionButtonByCode = new Map();
@@ -192,9 +198,174 @@
   let currentEnemiesSlain = 0;
   let currentCountdownValue = 0;
   let frozenResultHudState = null;
-  const combatMatchDurationMs = 5 * 60 * 1000;
+  const combatMatchDurationMs = (() => {
+    const hostname = window.location.hostname;
+    const isLocal = window.location.protocol !== 'file:' && (
+      hostname === 'localhost'
+      || hostname === '127.0.0.1'
+      || hostname === '::1'
+      || hostname.startsWith('192.168.')
+      || hostname.startsWith('10.')
+      || hostname.startsWith('172.16.')
+      || hostname.endsWith('.local')
+    );
+
+    return isLocal ? 5000 : (5 * 60 * 1000);
+  })();
+  const shareGameUrl = 'https://takahirox.github.io/voxcinder/';
+  const localResultCountDelayMs = 1000;
   let currentBattleResultCount = null;
   let currentBattleResultCountUnavailable = false;
+  let currentBattleLeaderboardEntries = null;
+  let currentBattleLeaderboardMode = null;
+  let currentBattleLeaderboardQualified = null;
+  let currentBattleLeaderboardRank = null;
+  let currentBattleLeaderboardUnavailable = false;
+  const localLeaderboardStorageKey = 'hytopiaLocalLeaderboard';
+  let pendingLocalResultCountTimerId = null;
+  let pendingLocalResultCountKey = null;
+
+  const setBattleResultStatusMessage = (element, message, loading) => {
+    if (!element) {
+      return;
+    }
+
+    element.hidden = false;
+    element.replaceChildren();
+
+    if (loading) {
+      const spinner = document.createElement('span');
+      spinner.className = 'playground-ui-inline-spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      element.appendChild(spinner);
+    }
+
+    const text = document.createElement('span');
+    text.textContent = message;
+    element.appendChild(text);
+  };
+
+  const hideBattleResultLeaderboard = () => {
+    if (battleResultLeaderboardStatus) {
+      battleResultLeaderboardStatus.hidden = true;
+      battleResultLeaderboardStatus.replaceChildren();
+    }
+
+    if (battleResultLeaderboard) {
+      battleResultLeaderboard.hidden = true;
+      battleResultLeaderboard.replaceChildren();
+    }
+  };
+
+  const persistLocalLeaderboardEntries = (mode, entries) => {
+    if (!isLocalHostname(window.location.hostname) || !mode || !Array.isArray(entries) || entries.length === 0) {
+      return;
+    }
+
+    try {
+      const rawValue = window.localStorage.getItem(localLeaderboardStorageKey);
+      const parsed = rawValue ? JSON.parse(rawValue) : {};
+      parsed[mode] = entries.slice(0, 5).map((entry) => ({
+        name: entry.name,
+        score: Math.floor(entry.score),
+      }));
+      window.localStorage.setItem(localLeaderboardStorageKey, JSON.stringify(parsed));
+    } catch {
+      /* ignore storage errors */
+    }
+  };
+
+  const formatLeaderboardScore = (score) => {
+    const safeScore = Math.max(0, Math.floor(Number(score) || 0));
+
+    if (currentHudMode === 'survival') {
+      return `${safeScore} Kills`;
+    }
+
+    const totalSeconds = Math.floor(safeScore / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  const updateBattleResultLeaderboard = () => {
+    const leaderboardEligible = currentBattleResult === 'victory'
+      && (currentHudMode === 'survival' || currentHudMode === 'battle');
+
+    if (!leaderboardEligible) {
+      hideBattleResultLeaderboard();
+      return;
+    }
+
+    if (currentBattleLeaderboardUnavailable) {
+      setBattleResultStatusMessage(battleResultLeaderboardStatus, 'Leaderboard unavailable.', false);
+      if (battleResultLeaderboard) {
+        battleResultLeaderboard.hidden = true;
+        battleResultLeaderboard.replaceChildren();
+      }
+      return;
+    }
+
+    if (!Array.isArray(currentBattleLeaderboardEntries) || currentBattleLeaderboardEntries.length === 0) {
+      setBattleResultStatusMessage(battleResultLeaderboardStatus, 'Submitting leaderboard score...', true);
+      if (battleResultLeaderboard) {
+        battleResultLeaderboard.hidden = true;
+        battleResultLeaderboard.replaceChildren();
+      }
+      return;
+    }
+
+    if (battleResultLeaderboardStatus) {
+      battleResultLeaderboardStatus.hidden = true;
+      battleResultLeaderboardStatus.replaceChildren();
+    }
+
+    if (!battleResultLeaderboard) {
+      return;
+    }
+
+    const section = document.createElement('section');
+    section.className = 'playground-ui-battle-result-leaderboard-section';
+
+    const title = document.createElement('h3');
+    title.className = 'playground-ui-battle-result-leaderboard-title';
+    title.textContent = currentHudMode === 'survival' ? 'Survival Leaderboard' : 'Versus Leaderboard';
+
+    const list = document.createElement('ol');
+    list.className = 'playground-ui-battle-result-leaderboard-list';
+
+    const paddedEntries = currentBattleLeaderboardEntries.slice(0, 5);
+    while (paddedEntries.length < 5) {
+      paddedEntries.push(null);
+    }
+
+    paddedEntries.forEach((entry, index) => {
+      const item = document.createElement('li');
+      item.className = 'playground-ui-battle-result-leaderboard-item';
+      if (
+        currentBattleLeaderboardQualified
+        && Number.isFinite(currentBattleLeaderboardRank)
+        && index === Math.floor(currentBattleLeaderboardRank) - 1
+      ) {
+        item.classList.add('is-highlighted');
+      }
+
+      const name = document.createElement('span');
+      name.className = 'playground-ui-battle-result-leaderboard-name';
+      name.textContent = entry?.name || '-';
+
+      const score = document.createElement('span');
+      score.className = 'playground-ui-battle-result-leaderboard-score';
+      score.textContent = entry ? formatLeaderboardScore(entry.score) : '-';
+
+      item.append(name, score);
+      list.appendChild(item);
+    });
+
+    section.append(title, list);
+    battleResultLeaderboard.hidden = false;
+    battleResultLeaderboard.replaceChildren(section);
+  };
 
   const isLocalHostname = (hostname) => {
     if (!hostname) {
@@ -257,7 +428,31 @@
     }
 
     battleResultCount.hidden = true;
-    battleResultCount.textContent = '';
+    battleResultCount.replaceChildren();
+  };
+
+  const clearPendingLocalResultCount = () => {
+    if (pendingLocalResultCountTimerId !== null) {
+      window.clearTimeout(pendingLocalResultCountTimerId);
+      pendingLocalResultCountTimerId = null;
+    }
+
+    pendingLocalResultCountKey = null;
+  };
+
+  signal.addEventListener('abort', clearPendingLocalResultCount, { once: true });
+
+  const updateBattleShareButton = () => {
+    if (!battleShareButton) {
+      return;
+    }
+
+    battleShareButton.disabled = !(
+      currentBattleResult
+      && Number.isFinite(currentBattleResultCount)
+      && currentBattleResultCount >= 1
+      && !currentBattleResultCountUnavailable
+    );
   };
 
   const getBattleResultCountLoadingMessage = () => {
@@ -281,16 +476,34 @@
   };
 
   const updateBattleResultCount = () => {
-    if (!currentBattleResult || !isResultCountFetchEnabled()) {
+    if (!currentBattleResult) {
+      clearPendingLocalResultCount();
       hideBattleResultCount();
+      updateBattleShareButton();
       return;
     }
 
-    if (currentBattleResultCountUnavailable) {
-      if (battleResultCount) {
-        battleResultCount.hidden = false;
-        battleResultCount.textContent = 'Global results unavailable.';
+    if (!isResultCountFetchEnabled()) {
+      const localResultCountKey = `${currentHudMode}:${currentBattleResult}`;
+
+      if (!Number.isFinite(currentBattleResultCount) || currentBattleResultCount < 1) {
+        if (pendingLocalResultCountKey !== localResultCountKey) {
+          clearPendingLocalResultCount();
+          pendingLocalResultCountKey = localResultCountKey;
+          pendingLocalResultCountTimerId = window.setTimeout(() => {
+            pendingLocalResultCountTimerId = null;
+            pendingLocalResultCountKey = null;
+            currentBattleResultCount = 1;
+            currentBattleResultCountUnavailable = false;
+            updateBattleResultCount();
+          }, localResultCountDelayMs);
+        }
       }
+    }
+
+    if (currentBattleResultCountUnavailable) {
+      setBattleResultStatusMessage(battleResultCount, 'Global results unavailable.', false);
+      updateBattleShareButton();
       return;
     }
 
@@ -302,10 +515,8 @@
         return;
       }
 
-      if (battleResultCount) {
-        battleResultCount.hidden = false;
-        battleResultCount.textContent = loadingMessage;
-      }
+      setBattleResultStatusMessage(battleResultCount, loadingMessage, true);
+      updateBattleShareButton();
       return;
     }
 
@@ -325,10 +536,31 @@
       return;
     }
 
-    if (battleResultCount) {
-      battleResultCount.hidden = false;
-      battleResultCount.textContent = message;
+    setBattleResultStatusMessage(battleResultCount, message, false);
+
+    updateBattleShareButton();
+  };
+
+  const buildBattleShareText = () => {
+    if (!currentBattleResult || !Number.isFinite(currentBattleResultCount) || currentBattleResultCount < 1) {
+      return '';
     }
+
+    const count = Math.floor(currentBattleResultCount);
+
+    if (currentHudMode === 'survival') {
+      return currentBattleResult === 'victory'
+        ? `I survived in Voxcinder. I'm one of ${count} survivors.`
+        : `I fell in Voxcinder. I'm one of ${count} players who died.`;
+    }
+
+    if (currentHudMode === 'battle') {
+      return currentBattleResult === 'victory'
+        ? `I won in Voxcinder. I'm one of ${count} winners.`
+        : `I lost in Voxcinder. I'm one of ${count} defeated players.`;
+    }
+
+    return '';
   };
 
   const updateElapsedTime = () => {
@@ -710,6 +942,7 @@
         battleResultSummary.textContent = '';
       }
       hideBattleResultCount();
+      hideBattleResultLeaderboard();
       if (battleResultActions) {
         battleResultActions.hidden = false;
       }
@@ -730,6 +963,7 @@
         battleResultSummary.textContent = countdownObjectiveText;
       }
       hideBattleResultCount();
+      hideBattleResultLeaderboard();
       if (battleResultActions) {
         battleResultActions.hidden = true;
       }
@@ -743,6 +977,7 @@
         battleResultSummary.textContent = `Kills ${frozenResultHudState?.survivalEnemiesSlain ?? currentEnemiesSlain}  Time ${frozenResultHudState?.topElapsedText ?? topElapsed?.textContent ?? '00:00:00'}`;
       }
       updateBattleResultCount();
+      updateBattleResultLeaderboard();
       if (battleResultActions) {
         battleResultActions.hidden = false;
       }
@@ -756,6 +991,7 @@
         battleResultSummary.textContent = `HP ${frozenResultHudState?.topKillsText ?? '0'}  Kills ${frozenResultHudState?.survivalEnemiesSlain ?? currentEnemiesSlain}  Time ${frozenResultHudState?.topElapsedText ?? topElapsed?.textContent ?? '00:00:00'}`;
       }
       updateBattleResultCount();
+      updateBattleResultLeaderboard();
       if (battleResultActions) {
         battleResultActions.hidden = false;
       }
@@ -769,6 +1005,7 @@
         battleResultSummary.textContent = currentBattleResult === 'victory' ? 'WIN' : 'LOSE';
       }
       updateBattleResultCount();
+      updateBattleResultLeaderboard();
       if (battleResultActions) {
         battleResultActions.hidden = false;
       }
@@ -781,6 +1018,7 @@
       battleResultSummary.textContent = '';
     }
     updateBattleResultCount();
+    updateBattleResultLeaderboard();
     if (battleResultActions) {
       battleResultActions.hidden = false;
     }
@@ -788,6 +1026,23 @@
 
   battleRetryButton?.addEventListener('click', () => {
     window.location.reload();
+  }, { signal });
+
+  battleShareButton?.addEventListener('click', () => {
+    if (battleShareButton.disabled) {
+      return;
+    }
+
+    const text = buildBattleShareText();
+    if (!text) {
+      return;
+    }
+
+    window.open(
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareGameUrl)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
   }, { signal });
 
   battleMenuButton?.addEventListener('click', () => {
@@ -960,6 +1215,36 @@
       ? Number(data.battleResultCount)
       : null;
     currentBattleResultCountUnavailable = !!data.battleResultCountUnavailable;
+    currentBattleLeaderboardEntries = Array.isArray(data.battleLeaderboardEntries)
+      ? data.battleLeaderboardEntries
+          .map((entry) => {
+            const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
+            const score = Number(entry?.score);
+
+            if (!name || !Number.isFinite(score)) {
+              return null;
+            }
+
+            return {
+              name,
+              score: Math.floor(score),
+            };
+          })
+          .filter((entry) => entry !== null)
+      : null;
+    currentBattleLeaderboardMode = typeof data.battleLeaderboardMode === 'string'
+      ? data.battleLeaderboardMode
+      : null;
+    currentBattleLeaderboardQualified = typeof data.battleLeaderboardQualified === 'boolean'
+      ? data.battleLeaderboardQualified
+      : null;
+    currentBattleLeaderboardRank = Number.isFinite(Number(data.battleLeaderboardRank))
+      ? Number(data.battleLeaderboardRank)
+      : null;
+    currentBattleLeaderboardUnavailable = !!data.battleLeaderboardUnavailable;
+    if (currentBattleLeaderboardMode && Array.isArray(currentBattleLeaderboardEntries) && currentBattleLeaderboardEntries.length > 0) {
+      persistLocalLeaderboardEntries(currentBattleLeaderboardMode, currentBattleLeaderboardEntries);
+    }
     currentBattleIsRoyale = Array.isArray(data.battleHealths) && data.battleHealths.length >= 4;
     currentEnemiesSlain = Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0)));
 
@@ -1197,9 +1482,124 @@
     font-family: 'Inter', sans-serif;
     font-size: 16px;
     font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     line-height: 1.35;
     text-align: center;
     text-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
+  }
+
+  #playground-ui-battle-result-leaderboard-status {
+    color: rgba(241, 241, 241, 0.9);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.35;
+    text-align: center;
+    text-transform: uppercase;
+    text-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
+  }
+
+  .playground-ui-inline-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(241, 241, 241, 0.28);
+    border-top-color: rgba(241, 241, 241, 0.96);
+    border-radius: 999px;
+    flex: 0 0 auto;
+    animation: playground-ui-inline-spinner-rotate 0.8s linear infinite;
+  }
+
+  #playground-ui-battle-result-leaderboard {
+    width: min(320px, 100%);
+  }
+
+  .playground-ui-battle-result-leaderboard-section {
+    background:
+      linear-gradient(180deg, rgba(30, 24, 18, 0.92), rgba(12, 10, 8, 0.94));
+    border: 1px solid rgba(181, 160, 113, 0.28);
+    border-radius: 16px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 242, 214, 0.05),
+      0 14px 34px rgba(0, 0, 0, 0.22);
+    padding: 14px 16px 16px;
+  }
+
+  .playground-ui-battle-result-leaderboard-title {
+    color: #f1e6cf;
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin: 0 0 12px;
+    text-align: left;
+  }
+
+  .playground-ui-battle-result-leaderboard-list {
+    display: grid;
+    gap: 8px;
+    list-style: decimal;
+    margin: 0;
+    padding-left: 24px;
+  }
+
+  .playground-ui-battle-result-leaderboard-item {
+    align-items: baseline;
+    color: rgba(231, 221, 199, 0.92);
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    padding-right: 2px;
+  }
+
+  .playground-ui-battle-result-leaderboard-item.is-highlighted {
+    background: rgba(227, 201, 143, 0.12);
+    border: 1px solid rgba(227, 201, 143, 0.36);
+    border-radius: 8px;
+    margin-left: -8px;
+    margin-right: -6px;
+    padding: 4px 6px 4px 8px;
+  }
+
+  .playground-ui-battle-result-leaderboard-name,
+  .playground-ui-battle-result-leaderboard-score {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
+  }
+
+  .playground-ui-battle-result-leaderboard-name {
+    color: rgba(231, 221, 199, 0.92);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .playground-ui-battle-result-leaderboard-score {
+    color: #e3c98f;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  @keyframes playground-ui-inline-spinner-rotate {
+    from {
+      transform: rotate(0deg);
+    }
+
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   #playground-ui-battle-result.is-timeout #playground-ui-battle-result-label {
@@ -1269,6 +1669,13 @@
     background: rgba(28, 28, 28, 0.92);
     border-color: rgba(241, 241, 241, 0.36);
     outline: none;
+  }
+
+  #playground-ui-battle-result-actions button:disabled {
+    background: rgba(18, 18, 18, 0.44);
+    border-color: rgba(241, 241, 241, 0.12);
+    color: rgba(241, 241, 241, 0.42);
+    cursor: default;
   }
 
   #playground-ui-actions {
