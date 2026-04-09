@@ -185,16 +185,46 @@
   const { signal } = window.__playgroundUiEventAbortController;
   let elapsedOriginAtMs = Date.now();
   let currentBattleResult = null;
+  let currentBattleResultReason = null;
+  let currentBattleIsRoyale = false;
   let currentEnemiesSlain = 0;
   let currentCountdownValue = 0;
+  let frozenResultHudState = null;
+  const combatMatchDurationMs = 5 * 60 * 1000;
+
+  const formatDurationSeconds = (totalSeconds) => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  const getCombatRemainingSeconds = () => {
+    const nowMs = Date.now();
+
+    if (nowMs < elapsedOriginAtMs) {
+      return Math.floor(combatMatchDurationMs / 1000);
+    }
+
+    return Math.max(0, Math.ceil((elapsedOriginAtMs + combatMatchDurationMs - nowMs) / 1000));
+  };
+
+  const getTopElapsedDisplayText = () => {
+    if (currentHudMode === 'battle' || currentHudMode === 'survival') {
+      return formatDurationSeconds(getCombatRemainingSeconds());
+    }
+
+    return formatDurationSeconds(Math.max(0, Math.floor((Date.now() - elapsedOriginAtMs) / 1000)));
+  };
 
   const updateElapsedTime = () => {
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - elapsedOriginAtMs) / 1000));
-    const hours = Math.floor(elapsedSeconds / 3600);
-    const minutes = Math.floor((elapsedSeconds % 3600) / 60);
-    const seconds = elapsedSeconds % 60;
+    if (currentBattleResult && frozenResultHudState && !frozenResultHudState.topElapsedHidden) {
+      topElapsed.textContent = frozenResultHudState.topElapsedText;
+      return;
+    }
 
-    topElapsed.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    topElapsed.textContent = getTopElapsedDisplayText();
   };
 
   updateElapsedTime();
@@ -546,6 +576,18 @@
       return;
     }
 
+    const countdownObjectiveText = currentHudMode === 'survival'
+      ? 'Slay enemies and stay alive'
+      : currentHudMode === 'battle'
+        ? (currentBattleIsRoyale
+          ? 'Be the last standing'
+          : 'Defeat your rival')
+        : '';
+
+    if (!currentBattleResult) {
+      frozenResultHudState = null;
+    }
+
     if (!currentBattleResult && currentCountdownValue <= 0) {
       battleResultOverlay.hidden = true;
       battleResultOverlay.classList.remove('is-defeat');
@@ -563,11 +605,15 @@
     battleResultOverlay.hidden = false;
     battleResultOverlay.classList.toggle('is-victory', currentBattleResult === 'victory');
     battleResultOverlay.classList.toggle('is-defeat', currentBattleResult === 'defeat');
+    battleResultOverlay.classList.toggle('is-timeout', currentHudMode === 'battle' && currentBattleResultReason === 'timeout');
+    battleResultOverlay.classList.toggle('is-survived', currentHudMode === 'survival' && currentBattleResult === 'victory');
+    battleResultOverlay.classList.toggle('is-survival-defeat', currentHudMode === 'survival' && currentBattleResult === 'defeat');
+    battleResultOverlay.classList.toggle('is-countdown', !currentBattleResult && currentCountdownValue > 0);
     if (!currentBattleResult && currentCountdownValue > 0) {
       battleResultLabel.textContent = String(currentCountdownValue);
       if (battleResultSummary) {
-        battleResultSummary.hidden = true;
-        battleResultSummary.textContent = '';
+        battleResultSummary.hidden = !countdownObjectiveText;
+        battleResultSummary.textContent = countdownObjectiveText;
       }
       if (battleResultActions) {
         battleResultActions.hidden = true;
@@ -579,7 +625,31 @@
       battleResultLabel.textContent = 'YOU DIED';
       if (battleResultSummary) {
         battleResultSummary.hidden = false;
-        battleResultSummary.textContent = `Kills ${currentEnemiesSlain}  Time ${topElapsed?.textContent ?? '00:00:00'}`;
+        battleResultSummary.textContent = `Kills ${frozenResultHudState?.survivalEnemiesSlain ?? currentEnemiesSlain}  Time ${frozenResultHudState?.topElapsedText ?? topElapsed?.textContent ?? '00:00:00'}`;
+      }
+      if (battleResultActions) {
+        battleResultActions.hidden = false;
+      }
+      return;
+    }
+
+    if (currentHudMode === 'survival' && currentBattleResult === 'victory') {
+      battleResultLabel.textContent = 'SURVIVED';
+      if (battleResultSummary) {
+        battleResultSummary.hidden = false;
+        battleResultSummary.textContent = `HP ${frozenResultHudState?.topKillsText ?? '0'}  Kills ${frozenResultHudState?.survivalEnemiesSlain ?? currentEnemiesSlain}  Time ${frozenResultHudState?.topElapsedText ?? topElapsed?.textContent ?? '00:00:00'}`;
+      }
+      if (battleResultActions) {
+        battleResultActions.hidden = false;
+      }
+      return;
+    }
+
+    if (currentHudMode === 'battle' && currentBattleResultReason === 'timeout') {
+      battleResultLabel.textContent = 'TIME UP';
+      if (battleResultSummary) {
+        battleResultSummary.hidden = false;
+        battleResultSummary.textContent = currentBattleResult === 'victory' ? 'WIN' : 'LOSE';
       }
       if (battleResultActions) {
         battleResultActions.hidden = false;
@@ -764,8 +834,11 @@
       elapsedOriginAtMs = Number(data.matchStartedAtEpochMs);
     }
     currentHudMode = data.hudMode === 'battle' ? 'battle' : (data.hudMode === 'survival' ? 'survival' : 'default');
+    currentBattleResultReason = data.battleResultReason === 'timeout' || data.battleResultReason === 'elimination'
+      ? data.battleResultReason
+      : null;
+    currentBattleIsRoyale = Array.isArray(data.battleHealths) && data.battleHealths.length >= 4;
     currentEnemiesSlain = Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0)));
-    updateBattleResultOverlay(data.battleResult);
 
     if (currentHudMode === 'battle') {
       const battleHealths = Array.isArray(data.battleHealths)
@@ -778,23 +851,29 @@
       topElapsed.hidden = isBattleRoyaleHud;
 
       if (isBattleRoyaleHud) {
-        topKills.textContent = String(battleHealths[0] ?? 0);
-        topDamage.textContent = String(battleHealths[1] ?? 0);
-        topExtra1.textContent = String(battleHealths[2] ?? 0);
-        topExtra2.textContent = String(battleHealths[3] ?? 0);
+        topKills.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topKillsText : String(battleHealths[0] ?? 0);
+        topDamage.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topDamageText : String(battleHealths[1] ?? 0);
+        topExtra1.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topExtra1Text : String(battleHealths[2] ?? 0);
+        topExtra2.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topExtra2Text : String(battleHealths[3] ?? 0);
       } else {
         const selfHealth = Math.max(0, Math.floor(Number(data.selfHealth ?? 0)));
         const opponentHealth = Math.max(0, Math.floor(Number(data.opponentHealth ?? 0)));
 
-        topKills.textContent = String(selfHealth);
-        topDamage.textContent = String(opponentHealth);
+        topKills.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topKillsText : String(selfHealth);
+        topDamage.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topDamageText : String(opponentHealth);
       }
     } else if (currentHudMode === 'survival') {
       topExtra1.hidden = true;
       topExtra2.hidden = true;
       topElapsed.hidden = false;
-      topKills.textContent = String(Math.max(0, Math.floor(Number(data.selfHealth ?? 0))));
-      topDamage.textContent = String(currentEnemiesSlain);
+      topKills.textContent = frozenResultHudState && data.battleResult
+        ? frozenResultHudState.topKillsText
+        : String(Math.max(0, Math.floor(Number(data.selfHealth ?? 0))));
+      topDamage.textContent = String(
+        frozenResultHudState && data.battleResult
+          ? frozenResultHudState.survivalEnemiesSlain
+          : currentEnemiesSlain,
+      );
     } else {
       topExtra1.hidden = true;
       topExtra2.hidden = true;
@@ -807,6 +886,33 @@
         topKills.textContent = String(Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0))));
       }
     }
+
+    if (data.battleResult && !frozenResultHudState) {
+      frozenResultHudState = {
+        topKillsText: topKills?.textContent ?? '',
+        topDamageText: topDamage?.textContent ?? '',
+        topExtra1Text: topExtra1?.textContent ?? '',
+        topExtra2Text: topExtra2?.textContent ?? '',
+        topElapsedText: getTopElapsedDisplayText(),
+        topExtra1Hidden: !!topExtra1?.hidden,
+        topExtra2Hidden: !!topExtra2?.hidden,
+        topElapsedHidden: !!topElapsed?.hidden,
+        survivalEnemiesSlain: currentEnemiesSlain,
+      };
+    }
+
+    if (frozenResultHudState && data.battleResult) {
+      topExtra1.hidden = frozenResultHudState.topExtra1Hidden;
+      topExtra2.hidden = frozenResultHudState.topExtra2Hidden;
+      topElapsed.hidden = frozenResultHudState.topElapsedHidden;
+      topKills.textContent = frozenResultHudState.topKillsText;
+      topDamage.textContent = frozenResultHudState.topDamageText;
+      topExtra1.textContent = frozenResultHudState.topExtra1Text;
+      topExtra2.textContent = frozenResultHudState.topExtra2Text;
+      topElapsed.textContent = frozenResultHudState.topElapsedText;
+    }
+
+    updateBattleResultOverlay(data.battleResult);
 
     setActionButtonDisabled('Space', currentControlsDisabled);
     setActionButtonDisabled('KeyQ', currentDashDisabled || currentEquipmentDisabled);
@@ -918,7 +1024,7 @@
   #playground-ui-battle-result {
     align-items: center;
     backdrop-filter: blur(4px);
-    background: rgba(7, 7, 7, 0.18);
+    background: rgba(7, 7, 7, 0.34);
     display: flex;
     inset: 0;
     justify-content: center;
@@ -945,6 +1051,7 @@
     font-weight: 800;
     letter-spacing: 0.08em;
     line-height: 1;
+    -webkit-text-stroke: 2px rgba(0, 0, 0, 0.92);
     text-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   }
 
@@ -959,6 +1066,44 @@
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    text-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
+  }
+
+  #playground-ui-battle-result.is-timeout #playground-ui-battle-result-label {
+    font-size: 38px;
+    letter-spacing: 0.18em;
+  }
+
+  #playground-ui-battle-result.is-timeout #playground-ui-battle-result-summary {
+    color: rgba(241, 241, 241, 0.96);
+    font-family: Baskerville, "Palatino Linotype", Palatino, "Times New Roman", serif;
+    font-size: 58px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    line-height: 0.95;
+    text-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  }
+
+  #playground-ui-battle-result.is-timeout.is-defeat #playground-ui-battle-result-summary {
+    color: rgba(233, 198, 198, 0.98);
+  }
+
+  #playground-ui-battle-result.is-survived #playground-ui-battle-result-summary {
+    color: rgba(241, 241, 241, 0.98);
+    font-family: 'Inter', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  }
+
+  #playground-ui-battle-result.is-survival-defeat #playground-ui-battle-result-summary {
+    color: rgba(233, 198, 198, 0.98);
+    font-family: 'Inter', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   }
 
   #playground-ui-battle-result-actions {
