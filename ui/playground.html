@@ -114,6 +114,7 @@
     <div id="playground-ui-battle-result-panel">
       <div id="playground-ui-battle-result-label">WIN</div>
       <div id="playground-ui-battle-result-summary" hidden></div>
+      <div id="playground-ui-battle-result-count" hidden></div>
       <div id="playground-ui-battle-result-actions">
         <button id="playground-ui-battle-retry" type="button">Retry</button>
         <button id="playground-ui-battle-menu" type="button">Back to Menu</button>
@@ -140,6 +141,7 @@
   const battleResultOverlay = document.getElementById('playground-ui-battle-result');
   const battleResultLabel = document.getElementById('playground-ui-battle-result-label');
   const battleResultSummary = document.getElementById('playground-ui-battle-result-summary');
+  const battleResultCount = document.getElementById('playground-ui-battle-result-count');
   const battleResultActions = document.getElementById('playground-ui-battle-result-actions');
   const battleRetryButton = document.getElementById('playground-ui-battle-retry');
   const battleMenuButton = document.getElementById('playground-ui-battle-menu');
@@ -191,6 +193,37 @@
   let currentCountdownValue = 0;
   let frozenResultHudState = null;
   const combatMatchDurationMs = 5 * 60 * 1000;
+  let currentBattleResultCount = null;
+  let currentBattleResultCountUnavailable = false;
+
+  const isLocalHostname = (hostname) => {
+    if (!hostname) {
+      return false;
+    }
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return true;
+    }
+
+    if (
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('172.16.') ||
+      hostname.endsWith('.local')
+    ) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const isResultCountFetchEnabled = () => {
+    if (window.location.protocol === 'file:') {
+      return false;
+    }
+
+    return !isLocalHostname(window.location.hostname);
+  };
 
   const formatDurationSeconds = (totalSeconds) => {
     const hours = Math.floor(totalSeconds / 3600);
@@ -216,6 +249,86 @@
     }
 
     return formatDurationSeconds(Math.max(0, Math.floor((Date.now() - elapsedOriginAtMs) / 1000)));
+  };
+
+  const hideBattleResultCount = () => {
+    if (!battleResultCount) {
+      return;
+    }
+
+    battleResultCount.hidden = true;
+    battleResultCount.textContent = '';
+  };
+
+  const getBattleResultCountLoadingMessage = () => {
+    if (!currentBattleResult) {
+      return '';
+    }
+
+    if (currentHudMode === 'survival') {
+      return currentBattleResult === 'victory'
+        ? 'Loading survivors...'
+        : 'Loading fallen players...';
+    }
+
+    if (currentHudMode === 'battle') {
+      return currentBattleResult === 'victory'
+        ? 'Loading winners...'
+        : 'Loading defeated players...';
+    }
+
+    return '';
+  };
+
+  const updateBattleResultCount = () => {
+    if (!currentBattleResult || !isResultCountFetchEnabled()) {
+      hideBattleResultCount();
+      return;
+    }
+
+    if (currentBattleResultCountUnavailable) {
+      if (battleResultCount) {
+        battleResultCount.hidden = false;
+        battleResultCount.textContent = 'Global results unavailable.';
+      }
+      return;
+    }
+
+    if (!Number.isFinite(currentBattleResultCount) || currentBattleResultCount < 1) {
+      const loadingMessage = getBattleResultCountLoadingMessage();
+
+      if (!loadingMessage) {
+        hideBattleResultCount();
+        return;
+      }
+
+      if (battleResultCount) {
+        battleResultCount.hidden = false;
+        battleResultCount.textContent = loadingMessage;
+      }
+      return;
+    }
+
+    const count = Math.floor(currentBattleResultCount);
+    const message = currentHudMode === 'survival'
+      ? (currentBattleResult === 'victory'
+        ? `You are one of ${count} survivors.`
+        : `You are one of ${count} players who died.`)
+      : currentHudMode === 'battle'
+        ? (currentBattleResult === 'victory'
+          ? `You are one of ${count} winners.`
+          : `You are one of ${count} defeated players.`)
+        : '';
+
+    if (!message) {
+      hideBattleResultCount();
+      return;
+    }
+
+    if (battleResultCount) {
+      battleResultCount.hidden = false;
+      battleResultCount.textContent = message;
+    }
   };
 
   const updateElapsedTime = () => {
@@ -596,6 +709,7 @@
         battleResultSummary.hidden = true;
         battleResultSummary.textContent = '';
       }
+      hideBattleResultCount();
       if (battleResultActions) {
         battleResultActions.hidden = false;
       }
@@ -615,6 +729,7 @@
         battleResultSummary.hidden = !countdownObjectiveText;
         battleResultSummary.textContent = countdownObjectiveText;
       }
+      hideBattleResultCount();
       if (battleResultActions) {
         battleResultActions.hidden = true;
       }
@@ -627,6 +742,7 @@
         battleResultSummary.hidden = false;
         battleResultSummary.textContent = `Kills ${frozenResultHudState?.survivalEnemiesSlain ?? currentEnemiesSlain}  Time ${frozenResultHudState?.topElapsedText ?? topElapsed?.textContent ?? '00:00:00'}`;
       }
+      updateBattleResultCount();
       if (battleResultActions) {
         battleResultActions.hidden = false;
       }
@@ -639,6 +755,7 @@
         battleResultSummary.hidden = false;
         battleResultSummary.textContent = `HP ${frozenResultHudState?.topKillsText ?? '0'}  Kills ${frozenResultHudState?.survivalEnemiesSlain ?? currentEnemiesSlain}  Time ${frozenResultHudState?.topElapsedText ?? topElapsed?.textContent ?? '00:00:00'}`;
       }
+      updateBattleResultCount();
       if (battleResultActions) {
         battleResultActions.hidden = false;
       }
@@ -651,6 +768,7 @@
         battleResultSummary.hidden = false;
         battleResultSummary.textContent = currentBattleResult === 'victory' ? 'WIN' : 'LOSE';
       }
+      updateBattleResultCount();
       if (battleResultActions) {
         battleResultActions.hidden = false;
       }
@@ -662,6 +780,7 @@
       battleResultSummary.hidden = true;
       battleResultSummary.textContent = '';
     }
+    updateBattleResultCount();
     if (battleResultActions) {
       battleResultActions.hidden = false;
     }
@@ -837,6 +956,10 @@
     currentBattleResultReason = data.battleResultReason === 'timeout' || data.battleResultReason === 'elimination'
       ? data.battleResultReason
       : null;
+    currentBattleResultCount = Number.isFinite(Number(data.battleResultCount))
+      ? Number(data.battleResultCount)
+      : null;
+    currentBattleResultCountUnavailable = !!data.battleResultCountUnavailable;
     currentBattleIsRoyale = Array.isArray(data.battleHealths) && data.battleHealths.length >= 4;
     currentEnemiesSlain = Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0)));
 
@@ -1066,6 +1189,16 @@
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    text-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
+  }
+
+  #playground-ui-battle-result-count {
+    color: rgba(241, 241, 241, 0.88);
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: center;
     text-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
   }
 
