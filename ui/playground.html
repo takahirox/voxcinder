@@ -211,7 +211,6 @@
   const localLeaderboardStorageKey = 'hytopiaLocalLeaderboard';
   let pendingLocalResultCountTimerId = null;
   let pendingLocalResultCountKey = null;
-  const normalizedBattleLeaderboardEntries = [];
 
   const setBattleResultStatusMessage = (element, message, loading) => {
     if (!element) {
@@ -322,8 +321,12 @@
     const list = document.createElement('ol');
     list.className = 'playground-ui-battle-result-leaderboard-list';
 
-    for (let index = 0; index < 5; index++) {
-      const entry = currentBattleLeaderboardEntries[index] || null;
+    const paddedEntries = currentBattleLeaderboardEntries.slice(0, 5);
+    while (paddedEntries.length < 5) {
+      paddedEntries.push(null);
+    }
+
+    paddedEntries.forEach((entry, index) => {
       const item = document.createElement('li');
       item.className = 'playground-ui-battle-result-leaderboard-item';
       if (
@@ -344,7 +347,7 @@
 
       item.append(name, score);
       list.appendChild(item);
-    }
+    });
 
     section.append(title, list);
     battleResultLeaderboard.hidden = false;
@@ -1199,28 +1202,23 @@
       ? Number(data.battleResultCount)
       : null;
     currentBattleResultCountUnavailable = !!data.battleResultCountUnavailable;
-    if (Array.isArray(data.battleLeaderboardEntries)) {
-      normalizedBattleLeaderboardEntries.length = 0;
+    currentBattleLeaderboardEntries = Array.isArray(data.battleLeaderboardEntries)
+      ? data.battleLeaderboardEntries
+          .map((entry) => {
+            const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
+            const score = Number(entry?.score);
 
-      for (let i = 0; i < data.battleLeaderboardEntries.length; i++) {
-        const entry = data.battleLeaderboardEntries[i];
-        const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
-        const score = Number(entry?.score);
+            if (!name || !Number.isFinite(score)) {
+              return null;
+            }
 
-        if (!name || !Number.isFinite(score)) {
-          continue;
-        }
-
-        normalizedBattleLeaderboardEntries.push({
-          name,
-          score: Math.floor(score),
-        });
-      }
-
-      currentBattleLeaderboardEntries = normalizedBattleLeaderboardEntries;
-    } else {
-      currentBattleLeaderboardEntries = null;
-    }
+            return {
+              name,
+              score: Math.floor(score),
+            };
+          })
+          .filter((entry) => entry !== null)
+      : null;
     currentBattleLeaderboardMode = typeof data.battleLeaderboardMode === 'string'
       ? data.battleLeaderboardMode
       : null;
@@ -1238,33 +1236,20 @@
     currentEnemiesSlain = Math.max(0, Math.floor(Number(data.enemiesSlain ?? 0)));
 
     if (currentHudMode === 'battle') {
-      let battleHealth0;
-      let battleHealth1;
-      let battleHealth2;
-      let battleHealth3;
-
-      if (Array.isArray(data.battleHealths) && data.battleHealths.length >= 4) {
-        battleHealth0 = Math.max(0, Math.floor(Number(data.battleHealths[0] ?? 0)));
-        battleHealth1 = Math.max(0, Math.floor(Number(data.battleHealths[1] ?? 0)));
-        battleHealth2 = Math.max(0, Math.floor(Number(data.battleHealths[2] ?? 0)));
-        battleHealth3 = Math.max(0, Math.floor(Number(data.battleHealths[3] ?? 0)));
-      }
-
-      const isBattleRoyaleHud =
-        battleHealth0 !== undefined
-        && battleHealth1 !== undefined
-        && battleHealth2 !== undefined
-        && battleHealth3 !== undefined;
+      const battleHealths = Array.isArray(data.battleHealths)
+        ? data.battleHealths.map((value) => Math.max(0, Math.floor(Number(value ?? 0)))).slice(0, 4)
+        : undefined;
+      const isBattleRoyaleHud = !!battleHealths && battleHealths.length >= 4;
 
       topExtra1.hidden = !isBattleRoyaleHud;
       topExtra2.hidden = !isBattleRoyaleHud;
       topElapsed.hidden = isBattleRoyaleHud;
 
       if (isBattleRoyaleHud) {
-        topKills.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topKillsText : String(battleHealth0);
-        topDamage.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topDamageText : String(battleHealth1);
-        topExtra1.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topExtra1Text : String(battleHealth2);
-        topExtra2.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topExtra2Text : String(battleHealth3);
+        topKills.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topKillsText : String(battleHealths[0] ?? 0);
+        topDamage.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topDamageText : String(battleHealths[1] ?? 0);
+        topExtra1.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topExtra1Text : String(battleHealths[2] ?? 0);
+        topExtra2.textContent = frozenResultHudState && data.battleResult ? frozenResultHudState.topExtra2Text : String(battleHealths[3] ?? 0);
       } else {
         const selfHealth = Math.max(0, Math.floor(Number(data.selfHealth ?? 0)));
         const opponentHealth = Math.max(0, Math.floor(Number(data.opponentHealth ?? 0)));
