@@ -16,6 +16,18 @@
     <span id="playground-ui-top-extra-2" class="playground-ui-top-stat playground-ui-top-stat-damage" hidden>0</span>
     <span id="playground-ui-top-elapsed" class="playground-ui-top-elapsed">00:00:00</span>
   </div>
+  <div id="playground-ui-mission-panel" hidden>
+    <div id="playground-ui-mission-title">Task</div>
+    <div id="playground-ui-mission-objectives"></div>
+  </div>
+  <div id="playground-ui-mission-intro" hidden>
+    <div id="playground-ui-mission-intro-panel">
+      <div id="playground-ui-mission-intro-title"></div>
+      <div id="playground-ui-mission-intro-flavor"></div>
+      <div id="playground-ui-mission-intro-description"></div>
+      <button id="playground-ui-mission-intro-button" type="button">OK</button>
+    </div>
+  </div>
   <div id="playground-ui-hud">
     <div class="playground-ui-hand-slot playground-ui-hand-slot-left">
       <div id="playground-ui-left-slot" class="playground-ui-slot-frame">
@@ -134,6 +146,14 @@
   const topExtra2 = document.getElementById('playground-ui-top-extra-2');
   const topKills = document.getElementById('playground-ui-top-kills');
   const topElapsed = document.getElementById('playground-ui-top-elapsed');
+  const missionPanel = document.getElementById('playground-ui-mission-panel');
+  const missionTitle = document.getElementById('playground-ui-mission-title');
+  const missionObjectives = document.getElementById('playground-ui-mission-objectives');
+  const missionIntroOverlay = document.getElementById('playground-ui-mission-intro');
+  const missionIntroTitle = document.getElementById('playground-ui-mission-intro-title');
+  const missionIntroFlavor = document.getElementById('playground-ui-mission-intro-flavor');
+  const missionIntroDescription = document.getElementById('playground-ui-mission-intro-description');
+  const missionIntroButton = document.getElementById('playground-ui-mission-intro-button');
   const leftSlot = document.getElementById('playground-ui-left-slot');
   const leftSlotFlash = document.getElementById('playground-ui-left-slot-flash');
   const leftIcon = document.getElementById('playground-ui-left-icon');
@@ -209,8 +229,11 @@
   let currentBattleLeaderboardRank = null;
   let currentBattleLeaderboardUnavailable = false;
   const localLeaderboardStorageKey = 'hytopiaLocalLeaderboard';
+  const completedMissionsStorageKey = 'hytopiaCompletedMissions';
+  const missionStartEventType = 'mission-start';
   let pendingLocalResultCountTimerId = null;
   let pendingLocalResultCountKey = null;
+  let currentMission = null;
 
   const setBattleResultStatusMessage = (element, message, loading) => {
     if (!element) {
@@ -262,6 +285,26 @@
     }
   };
 
+  const persistCompletedMission = (missionId) => {
+    if (!missionId || typeof missionId !== 'string') {
+      return;
+    }
+
+    try {
+      const rawValue = window.localStorage.getItem(completedMissionsStorageKey);
+      const parsed = rawValue ? JSON.parse(rawValue) : [];
+      const ids = Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : [];
+      if (ids.includes(missionId)) {
+        return;
+      }
+
+      ids.push(missionId);
+      window.localStorage.setItem(completedMissionsStorageKey, JSON.stringify(ids));
+    } catch {
+      /* ignore storage errors */
+    }
+  };
+
   const formatLeaderboardScore = (score) => {
     const safeScore = Math.max(0, Math.floor(Number(score) || 0));
 
@@ -276,6 +319,11 @@
   };
 
   const updateBattleResultLeaderboard = () => {
+    if (currentMission?.id) {
+      hideBattleResultLeaderboard();
+      return;
+    }
+
     const leaderboardEligible = currentBattleResult === 'victory'
       && (currentHudMode === 'survival' || currentHudMode === 'battle');
 
@@ -380,7 +428,7 @@
       return false;
     }
 
-    return !isLocalHostname(window.location.hostname);
+    return true;
   };
 
   const formatDurationSeconds = (totalSeconds) => {
@@ -447,6 +495,12 @@
       return '';
     }
 
+    if (currentMission?.id) {
+      return currentBattleResult === 'victory'
+        ? `Loading ${currentMission.title || 'mission'} clears...`
+        : `Loading ${currentMission.title || 'mission'} failures...`;
+    }
+
     if (currentHudMode === 'survival') {
       return currentBattleResult === 'victory'
         ? 'Loading survivors...'
@@ -471,7 +525,9 @@
     }
 
     if (!isResultCountFetchEnabled()) {
-      const localResultCountKey = `${currentHudMode}:${currentBattleResult}`;
+      const localResultCountKey = currentMission?.id
+        ? `mission:${currentMission.id}:${currentBattleResult}`
+        : `${currentHudMode}:${currentBattleResult}`;
 
       if (!Number.isFinite(currentBattleResultCount) || currentBattleResultCount < 1) {
         if (pendingLocalResultCountKey !== localResultCountKey) {
@@ -508,7 +564,12 @@
     }
 
     const count = Math.floor(currentBattleResultCount);
-    const message = currentHudMode === 'survival'
+    const missionTitleText = typeof currentMission?.title === 'string' ? currentMission.title : 'Mission';
+    const message = currentMission?.id
+      ? (currentBattleResult === 'victory'
+        ? `You are one of ${count} players who cleared ${missionTitleText}.`
+        : `You are one of ${count} players who failed ${missionTitleText}.`)
+      : currentHudMode === 'survival'
       ? (currentBattleResult === 'victory'
         ? `You are one of ${count} survivors.`
         : `You are one of ${count} players who died.`)
@@ -534,6 +595,13 @@
     }
 
     const count = Math.floor(currentBattleResultCount);
+    const missionTitleText = typeof currentMission?.title === 'string' ? currentMission.title : 'Mission';
+
+    if (currentMission?.id) {
+      return currentBattleResult === 'victory'
+        ? `I cleared ${missionTitleText} in Voxcinder. I'm one of ${count} players who cleared it.`
+        : `I failed ${missionTitleText} in Voxcinder. I'm one of ${count} players who failed it.`;
+    }
 
     if (currentHudMode === 'survival') {
       return currentBattleResult === 'victory'
@@ -902,13 +970,78 @@
     });
   }, { signal });
 
+  const updateMissionPanel = (mission) => {
+    currentMission = mission && typeof mission === 'object' ? mission : null;
+
+    if (!missionPanel || !missionTitle || !missionObjectives) {
+      return;
+    }
+
+    if (!currentMission) {
+      missionPanel.hidden = true;
+      missionTitle.textContent = '';
+      missionObjectives.replaceChildren();
+      return;
+    }
+
+    missionPanel.hidden = false;
+    missionTitle.textContent = 'Task';
+    missionObjectives.replaceChildren();
+
+    const objectives = Array.isArray(currentMission.objectives) ? currentMission.objectives : [];
+    objectives.forEach((objective) => {
+      const row = document.createElement('div');
+      row.className = 'playground-ui-mission-objective';
+      if (objective?.done) {
+        row.classList.add('is-done');
+      }
+
+      const label = document.createElement('span');
+      label.className = 'playground-ui-mission-objective-label';
+      label.textContent = typeof objective?.label === 'string' ? objective.label : '';
+
+      const progress = document.createElement('span');
+      progress.className = 'playground-ui-mission-objective-progress';
+      const current = Math.max(0, Math.floor(Number(objective?.current ?? 0)));
+      const target = Math.max(0, Math.floor(Number(objective?.target ?? 0)));
+      progress.textContent = `${current}/${target}`;
+
+      row.append(label, progress);
+      missionObjectives.appendChild(row);
+    });
+  };
+
+  const updateMissionIntro = (mission) => {
+    if (!missionIntroOverlay || !missionIntroTitle || !missionIntroFlavor || !missionIntroDescription || !missionIntroButton) {
+      return;
+    }
+
+    const intro = mission?.intro && typeof mission.intro === 'object' ? mission.intro : null;
+    const shouldShow = !!intro && intro.acknowledged === false;
+
+    if (!shouldShow) {
+      missionIntroOverlay.hidden = true;
+      missionIntroTitle.textContent = '';
+      missionIntroFlavor.textContent = '';
+      missionIntroDescription.textContent = '';
+      return;
+    }
+
+    missionIntroOverlay.hidden = false;
+    missionIntroTitle.textContent = typeof intro.title === 'string' ? intro.title : 'Mission';
+    missionIntroFlavor.textContent = typeof intro.flavor === 'string' ? intro.flavor : '';
+    missionIntroDescription.textContent = typeof intro.description === 'string' ? intro.description : '';
+  };
+
   const updateBattleResultOverlay = (battleResult) => {
     currentBattleResult = battleResult === 'victory' || battleResult === 'defeat' ? battleResult : null;
     if (!battleResultOverlay || !battleResultLabel) {
       return;
     }
 
-    const countdownObjectiveText = currentHudMode === 'survival'
+    const countdownObjectiveText = currentMission?.id
+      ? (typeof currentMission.title === 'string' ? currentMission.title : 'Mission')
+      : currentHudMode === 'survival'
       ? 'Slay enemies and stay alive'
       : currentHudMode === 'battle'
         ? (currentBattleIsRoyale
@@ -953,6 +1086,34 @@
       hideBattleResultLeaderboard();
       if (battleResultActions) {
         battleResultActions.hidden = true;
+      }
+      return;
+    }
+
+    if (currentMission?.id && currentBattleResult === 'defeat') {
+      battleResultLabel.textContent = 'MISSION FAILED';
+      if (battleResultSummary) {
+        battleResultSummary.hidden = false;
+        battleResultSummary.textContent = typeof currentMission.title === 'string' ? currentMission.title : 'Mission';
+      }
+      updateBattleResultCount();
+      hideBattleResultLeaderboard();
+      if (battleResultActions) {
+        battleResultActions.hidden = false;
+      }
+      return;
+    }
+
+    if (currentMission?.id && currentBattleResult === 'victory') {
+      battleResultLabel.textContent = 'MISSION CLEAR';
+      if (battleResultSummary) {
+        battleResultSummary.hidden = false;
+        battleResultSummary.textContent = typeof currentMission.title === 'string' ? currentMission.title : 'Mission';
+      }
+      updateBattleResultCount();
+      hideBattleResultLeaderboard();
+      if (battleResultActions) {
+        battleResultActions.hidden = false;
       }
       return;
     }
@@ -1043,10 +1204,17 @@
       'botModes',
       'disableEnemies',
       'spawnLayout',
+      'missionId',
     ];
 
     removableKeys.forEach((key) => url.searchParams.delete(key));
     window.location.href = url.toString();
+  }, { signal });
+
+  missionIntroButton?.addEventListener('click', () => {
+    hytopia.sendData({
+      type: missionStartEventType,
+    });
   }, { signal });
 
   const animateDamageVignette = (element, options) => {
@@ -1229,6 +1397,8 @@
       ? Number(data.battleLeaderboardRank)
       : null;
     currentBattleLeaderboardUnavailable = !!data.battleLeaderboardUnavailable;
+    updateMissionPanel(data.mission);
+    updateMissionIntro(data.mission);
     if (currentBattleLeaderboardMode && Array.isArray(currentBattleLeaderboardEntries) && currentBattleLeaderboardEntries.length > 0) {
       persistLocalLeaderboardEntries(currentBattleLeaderboardMode, currentBattleLeaderboardEntries);
     }
@@ -1305,6 +1475,10 @@
       topExtra1.textContent = frozenResultHudState.topExtra1Text;
       topExtra2.textContent = frozenResultHudState.topExtra2Text;
       topElapsed.textContent = frozenResultHudState.topElapsedText;
+    }
+
+    if (data.battleResult === 'victory' && currentMission?.id) {
+      persistCompletedMission(currentMission.id);
     }
 
     updateBattleResultOverlay(data.battleResult);
@@ -1404,6 +1578,148 @@
     justify-content: flex-end;
     text-align: right;
     z-index: 1;
+  }
+
+  #playground-ui-mission-panel {
+    backdrop-filter: blur(3px);
+    background:
+      radial-gradient(circle at 32% 28%, rgba(82, 69, 45, 0.2), rgba(82, 69, 45, 0) 52%),
+      linear-gradient(145deg, rgba(28, 24, 19, 0.94), rgba(7, 7, 6, 0.98));
+    border: 1px solid rgba(181, 160, 113, 0.62);
+    border-radius: 18px;
+    display: grid;
+    gap: 8px;
+    left: calc(24px + var(--hytopia-safe-area-left, 0px));
+    max-width: min(320px, calc(100vw - 48px));
+    padding: 14px 16px;
+    position: absolute;
+    top: calc(76px + var(--hytopia-safe-area-top, 0px));
+    user-select: none;
+  }
+
+  #playground-ui-mission-panel[hidden] {
+    display: none;
+  }
+
+  #playground-ui-mission-intro {
+    align-items: center;
+    backdrop-filter: blur(4px);
+    background: rgba(7, 7, 7, 0.46);
+    display: flex;
+    inset: 0;
+    justify-content: center;
+    pointer-events: auto;
+    position: absolute;
+  }
+
+  #playground-ui-mission-intro[hidden] {
+    display: none;
+  }
+
+  #playground-ui-mission-intro-panel {
+    background:
+      radial-gradient(circle at 32% 28%, rgba(82, 69, 45, 0.22), rgba(82, 69, 45, 0) 52%),
+      linear-gradient(145deg, rgba(28, 24, 19, 0.97), rgba(7, 7, 6, 0.99));
+    border: 1px solid rgba(181, 160, 113, 0.62);
+    border-radius: 18px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 242, 214, 0.05),
+      0 14px 34px rgba(0, 0, 0, 0.28);
+    display: grid;
+    gap: 14px;
+    max-width: min(520px, calc(100vw - 32px));
+    padding: 24px 24px 20px;
+    pointer-events: auto;
+  }
+
+  #playground-ui-mission-intro-title {
+    color: #f1e6cf;
+    font-family: 'Cinzel', serif;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1.1;
+  }
+
+  #playground-ui-mission-intro-flavor {
+    color: rgba(241, 241, 241, 0.92);
+    font-family: 'Inter', sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  #playground-ui-mission-intro-description {
+    color: rgba(231, 221, 199, 0.9);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  #playground-ui-mission-intro-button {
+    appearance: none;
+    background: rgba(18, 18, 18, 0.78);
+    border: 1px solid rgba(241, 241, 241, 0.22);
+    border-radius: 999px;
+    color: #f1f1f1;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    justify-self: end;
+    line-height: 1;
+    padding: 11px 18px;
+    pointer-events: auto;
+  }
+
+  #playground-ui-mission-intro-button:hover,
+  #playground-ui-mission-intro-button:focus-visible {
+    background: rgba(28, 28, 28, 0.92);
+    border-color: rgba(241, 241, 241, 0.36);
+    outline: none;
+  }
+
+  #playground-ui-mission-title {
+    color: #f1e6cf;
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1;
+  }
+
+  #playground-ui-mission-objectives {
+    display: grid;
+    gap: 6px;
+  }
+
+  .playground-ui-mission-objective {
+    align-items: center;
+    color: rgba(231, 221, 199, 0.92);
+    display: flex;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    gap: 12px;
+    justify-content: space-between;
+    line-height: 1.3;
+  }
+
+  .playground-ui-mission-objective.is-done {
+    color: #f5d37d;
+  }
+
+  .playground-ui-mission-objective-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .playground-ui-mission-objective-progress {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
   }
 
   #playground-ui-hud {
