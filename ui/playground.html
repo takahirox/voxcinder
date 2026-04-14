@@ -428,7 +428,7 @@
       return false;
     }
 
-    return true;
+    return !isLocalHostname(window.location.hostname);
   };
 
   const formatDurationSeconds = (totalSeconds) => {
