@@ -212,17 +212,23 @@
   window.__playgroundUiEventAbortController = new AbortController();
   const { signal } = window.__playgroundUiEventAbortController;
   let elapsedOriginAtMs = Date.now();
+  let currentMatchStartedAtEpochMs = null;
   let currentBattleResult = null;
   let currentBattleResultReason = null;
   let currentBattleIsRoyale = false;
   let currentEnemiesSlain = 0;
   let currentCountdownValue = 0;
+  let currentSpecialMissionRemainingMs = null;
+  let currentSpecialMissionRemainingSnapshotAtMs = Date.now();
   let frozenResultHudState = null;
   const combatMatchDurationMs = 5 * 60 * 1000;
+  const specialMissionDurationMs = 3 * 60 * 1000;
   const shareGameUrl = 'https://takahirox.github.io/voxcinder/';
   const localResultCountDelayMs = 1000;
   let currentBattleResultCount = null;
   let currentBattleResultCountUnavailable = false;
+  let currentSpecialStatusDetail = null;
+  let currentSpecialStatusMessage = null;
   let currentBattleLeaderboardEntries = null;
   let currentBattleLeaderboardMode = null;
   let currentBattleLeaderboardQualified = null;
@@ -449,7 +455,24 @@
     return Math.max(0, Math.ceil((elapsedOriginAtMs + combatMatchDurationMs - nowMs) / 1000));
   };
 
+  const getSpecialMissionRemainingSeconds = () => {
+    const baseRemainingMs = Number.isFinite(currentSpecialMissionRemainingMs)
+      ? currentSpecialMissionRemainingMs
+      : specialMissionDurationMs;
+
+    if (!Number.isFinite(currentMatchStartedAtEpochMs) || currentCountdownValue > 0 || currentSpecialStatusMessage) {
+      return Math.max(0, Math.ceil(baseRemainingMs / 1000));
+    }
+
+    const elapsedMs = Math.max(0, Date.now() - currentSpecialMissionRemainingSnapshotAtMs);
+    return Math.max(0, Math.ceil((baseRemainingMs - elapsedMs) / 1000));
+  };
+
   const getTopElapsedDisplayText = () => {
+    if (currentMission?.id === 'mission-4') {
+      return formatDurationSeconds(getSpecialMissionRemainingSeconds());
+    }
+
     if (currentHudMode === 'battle' || currentHudMode === 'survival') {
       return formatDurationSeconds(getCombatRemainingSeconds());
     }
@@ -1053,10 +1076,11 @@
       frozenResultHudState = null;
     }
 
-    if (!currentBattleResult && currentCountdownValue <= 0) {
+    if (!currentBattleResult && !currentSpecialStatusMessage && currentCountdownValue <= 0) {
       battleResultOverlay.hidden = true;
       battleResultOverlay.classList.remove('is-defeat');
       battleResultOverlay.classList.remove('is-victory');
+      battleResultOverlay.classList.remove('is-special-status');
       if (battleResultSummary) {
         battleResultSummary.hidden = true;
         battleResultSummary.textContent = '';
@@ -1076,11 +1100,26 @@
     battleResultOverlay.classList.toggle('is-survived', currentHudMode === 'survival' && currentBattleResult === 'victory');
     battleResultOverlay.classList.toggle('is-survival-defeat', currentHudMode === 'survival' && currentBattleResult === 'defeat');
     battleResultOverlay.classList.toggle('is-countdown', !currentBattleResult && currentCountdownValue > 0);
+    battleResultOverlay.classList.toggle('is-special-status', !currentBattleResult && !!currentSpecialStatusMessage);
     if (!currentBattleResult && currentCountdownValue > 0) {
       battleResultLabel.textContent = String(currentCountdownValue);
       if (battleResultSummary) {
         battleResultSummary.hidden = !countdownObjectiveText;
         battleResultSummary.textContent = countdownObjectiveText;
+      }
+      hideBattleResultCount();
+      hideBattleResultLeaderboard();
+      if (battleResultActions) {
+        battleResultActions.hidden = true;
+      }
+      return;
+    }
+
+    if (!currentBattleResult && currentSpecialStatusMessage) {
+      battleResultLabel.textContent = currentSpecialStatusMessage;
+      if (battleResultSummary) {
+        battleResultSummary.hidden = !currentSpecialStatusDetail;
+        battleResultSummary.textContent = currentSpecialStatusDetail || '';
       }
       hideBattleResultCount();
       hideBattleResultLeaderboard();
@@ -1361,7 +1400,14 @@
     currentCountdownValue = Math.max(0, Math.floor(Number(data.countdownValue ?? 0)));
     if (Number.isFinite(data.matchStartedAtEpochMs) && Number(data.matchStartedAtEpochMs) > 0) {
       elapsedOriginAtMs = Number(data.matchStartedAtEpochMs);
+      currentMatchStartedAtEpochMs = Number(data.matchStartedAtEpochMs);
+    } else {
+      currentMatchStartedAtEpochMs = null;
     }
+    currentSpecialMissionRemainingMs = Number.isFinite(Number(data.specialMissionRemainingMs))
+      ? Math.max(0, Math.floor(Number(data.specialMissionRemainingMs)))
+      : null;
+    currentSpecialMissionRemainingSnapshotAtMs = Date.now();
     currentHudMode = data.hudMode === 'battle' ? 'battle' : (data.hudMode === 'survival' ? 'survival' : 'default');
     currentBattleResultReason = data.battleResultReason === 'timeout' || data.battleResultReason === 'elimination'
       ? data.battleResultReason
@@ -1370,6 +1416,12 @@
       ? Number(data.battleResultCount)
       : null;
     currentBattleResultCountUnavailable = !!data.battleResultCountUnavailable;
+    currentSpecialStatusDetail = typeof data.specialStatusDetail === 'string' && data.specialStatusDetail.length > 0
+      ? data.specialStatusDetail
+      : null;
+    currentSpecialStatusMessage = typeof data.specialStatusMessage === 'string' && data.specialStatusMessage.length > 0
+      ? data.specialStatusMessage
+      : null;
     currentBattleLeaderboardEntries = Array.isArray(data.battleLeaderboardEntries)
       ? data.battleLeaderboardEntries
           .map((entry) => {
@@ -1443,8 +1495,11 @@
       topExtra1.hidden = true;
       topExtra2.hidden = true;
       topElapsed.hidden = false;
+      const specialTouchStrikes = Math.max(0, Math.floor(Number(data.specialTouchStrikes ?? 0)));
       if (topDamage) {
-        topDamage.textContent = `-${Math.max(0, Math.floor(Number(data.damageTaken ?? 0)))}`;
+        topDamage.textContent = currentMission?.id === 'mission-4'
+          ? `-${specialTouchStrikes}`
+          : `-${Math.max(0, Math.floor(Number(data.damageTaken ?? 0)))}`;
       }
 
       if (topKills) {
@@ -1655,6 +1710,7 @@
     font-size: 15px;
     font-weight: 500;
     line-height: 1.5;
+    white-space: pre-line;
   }
 
   #playground-ui-mission-intro-button {
@@ -1741,6 +1797,20 @@
     justify-content: center;
     pointer-events: auto;
     position: absolute;
+  }
+
+  #playground-ui-battle-result.is-special-status #playground-ui-battle-result-label {
+    color: #ffb366;
+    text-shadow: 0 0 18px rgba(255, 135, 61, 0.28);
+  }
+
+  #playground-ui-battle-result.is-special-status #playground-ui-battle-result-summary {
+    color: rgba(255, 241, 220, 0.96);
+    font-family: 'Inter', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   }
 
   #playground-ui-battle-result[hidden] {
