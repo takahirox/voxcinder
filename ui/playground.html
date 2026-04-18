@@ -468,8 +468,20 @@
     return Math.max(0, Math.ceil((baseRemainingMs - elapsedMs) / 1000));
   };
 
+  const getSpecialMissionElapsedSeconds = () => {
+    if (!Number.isFinite(currentMatchStartedAtEpochMs) || currentCountdownValue > 0) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor((Date.now() - currentMatchStartedAtEpochMs) / 1000));
+  };
+
   const getTopElapsedDisplayText = () => {
     if (currentMission?.id === 'mission-4') {
+      if (!Number.isFinite(currentSpecialMissionRemainingMs)) {
+        return formatDurationSeconds(getSpecialMissionElapsedSeconds());
+      }
+
       return formatDurationSeconds(getSpecialMissionRemainingSeconds());
     }
 
