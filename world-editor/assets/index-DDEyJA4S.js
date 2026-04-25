@@ -4690,7 +4690,7 @@ layout(location = 0) out highp vec4 pc_fragColor;
           <span>Blocks</span>
         </summary>
         <div class="sidebar-content">
-          <input class="generator-input" data-pattern="filter" type="text" placeholder="Filter blocks" />
+          <input class="generator-input" data-pattern="filter" type="text" placeholder="Filter blocks" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
           <div class="palette" data-pattern="palette"></div>
         </div>
       </details>
@@ -4753,6 +4753,8 @@ layout(location = 0) out highp vec4 pc_fragColor;
                 step="1"
                 value="300"
                 placeholder="Distance"
+                autocomplete="off"
+                inputmode="numeric"
               />
             </label>
           </div>
@@ -4770,15 +4772,15 @@ layout(location = 0) out highp vec4 pc_fragColor;
           <div class="generator-grid">
             <label class="generator-field">
               <span>Seed</span>
-              <input class="generator-input" data-generator="seed" type="number" value="1337" step="1" />
+              <input class="generator-input" data-generator="seed" type="number" value="1337" step="1" autocomplete="off" inputmode="numeric" />
             </label>
             <label class="generator-field">
               <span>Size</span>
-              <input class="generator-input" data-generator="size" type="number" value="18" min="8" max="96" step="1" />
+              <input class="generator-input" data-generator="size" type="number" value="18" min="8" max="96" step="1" autocomplete="off" inputmode="numeric" />
             </label>
             <label class="generator-field">
               <span>Height</span>
-              <input class="generator-input" data-generator="height" type="number" value="6" min="3" max="32" step="1" />
+              <input class="generator-input" data-generator="height" type="number" value="6" min="3" max="32" step="1" autocomplete="off" inputmode="numeric" />
             </label>
           </div>
           <button class="button primary generator-apply" data-generator="apply" type="button">Create</button>
