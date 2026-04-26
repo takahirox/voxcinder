@@ -4696,7 +4696,7 @@ layout(location = 0) out highp vec4 pc_fragColor;
           <span>Blocks</span>
         </summary>
         <div class="sidebar-content">
-          <input class="generator-input" data-pattern="filter" type="text" placeholder="Filter blocks" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+          <input class="generator-input" data-pattern="filter" type="text" name="block_filter" placeholder="Filter blocks" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true" />
           <div class="palette" data-pattern="palette"></div>
         </div>
       </details>
@@ -4804,7 +4804,7 @@ layout(location = 0) out highp vec4 pc_fragColor;
           <div class="palette entity-list" data-entity="list"></div>
           <label class="generator-field">
             <span>Entity JSON</span>
-            <textarea class="generator-input entity-json" data-entity="options" rows="8" spellcheck="false"></textarea>
+            <textarea class="generator-input entity-json" data-entity="options" name="entity_json_options" rows="8" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true"></textarea>
           </label>
           <button class="button primary generator-apply" data-entity="save" type="button">Save Entity</button>
         </div>
